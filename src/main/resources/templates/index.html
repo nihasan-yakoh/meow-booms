@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Exploding Meow Boom! 💣🐱</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
+    <style>
+        :root {
+            --card-width: 100px;
+            --card-height: 140px;
+            --bg-color: #1e1e2d; /* Metronic Dark */
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: #fff;
+            font-family: 'Poppins', sans-serif;
+            overflow: hidden; /* ห้าม scroll หน้าจอหลัก */
+            height: 100vh;
+        }
+
+        /* --- Login Screen --- */
+        #loginScreen {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #2c3e50 0%, #000000 100%);
+            z-index: 9999;
+            position: absolute;
+            top: 0; left: 0; width: 100%;
+        }
+
+        /* --- Game Area --- */
+        #gameScreen {
+            display: none; /* ซ่อนก่อนเริ่ม */
+            height: 100vh;
+            flex-direction: column;
+        }
+
+        /* Opponents Area (Top) */
+        .opponent-area {
+            display: flex;
+            overflow-x: auto;
+            padding: 10px;
+            background: rgba(0,0,0,0.2);
+            white-space: nowrap;
+        }
+        .opponent-card {
+            background: #3f4254;
+            border-radius: 10px;
+            padding: 5px 10px;
+            margin-right: 10px;
+            min-width: 100px;
+            text-align: center;
+            border: 2px solid transparent;
+        }
+        .opponent-card.active-turn {
+            border-color: #009ef7; /* Metronic Blue */
+            box-shadow: 0 0 10px #009ef7;
+        }
+
+        /* Table Area (Center) */
+        .table-area {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            gap: 20px;
+        }
+
+        /* Deck & Discard */
+        .game-deck {
+            width: 120px;
+            height: 170px;
+            background: linear-gradient(45deg, #ff9f43, #ff6b6b);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            transition: transform 0.1s;
+            position: relative;
+        }
+        .game-deck:active { transform: scale(0.95); }
+        .deck-count {
+            position: absolute;
+            top: -10px; right: -10px;
+            background: red;
+            border-radius: 50%;
+            width: 30px; height: 30px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold;
+        }
+
+        /* My Hand (Bottom) */
+        .my-hand-area {
+            height: 180px;
+            background: rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            overflow-x: auto;
+            padding: 10px 20px;
+            position: relative;
+        }
+
+        /* Card Style */
+        .playing-card {
+            width: var(--card-width);
+            height: var(--card-height);
+            background: #fff;
+            color: #333;
+            border-radius: 8px;
+            margin-right: -40px; /* ซ้อนทับกันนิดหน่อยแบบถือไพ่ */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 5px;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.3);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            flex-shrink: 0;
+            border: 2px solid #ccc;
+        }
+
+        .playing-card:hover, .playing-card.selected {
+            transform: translateY(-20px); /* เด้งขึ้นมา */
+            z-index: 10;
+            margin-right: 5px; /* ขยายช่องว่าง */
+        }
+
+        .playing-card.selected {
+            border: 3px solid #50cd89; /* Metronic Green */
+            box-shadow: 0 0 15px #50cd89;
+        }
+
+        .playing-card.give-mode {
+            border: 3px solid #f1416c; /* Metronic Red */
+            background: #fff5f8;
+        }
+
+        .card-icon { font-size: 24px; text-align: center; margin-top: 10px; }
+        .card-name { font-size: 12px; text-align: center; font-weight: bold; word-wrap: break-word; line-height: 1.2;}
+        .card-type { font-size: 10px; text-align: right; opacity: 0.6; }
+
+        /* Action Bar (Above Hand) */
+        .action-bar {
+            position: absolute;
+            bottom: 190px; /* เหนือกองการ์ด */
+            width: 100%;
+            text-align: center;
+            pointer-events: none; /* ให้คลิกทะลุได้ */
+        }
+        .action-btn {
+            pointer-events: auto;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            font-weight: bold;
+            padding: 10px 30px;
+            border-radius: 30px;
+            text-transform: uppercase;
+        }
+
+        /* Logs (Overlay) */
+        .log-overlay {
+            position: absolute;
+            top: 110px;
+            right: 10px;
+            width: 300px; /* กว้างขึ้นหน่อยให้อ่านง่าย */
+            max-height: calc(100vh - 350px); /* สูงไม่เกิน 40% ของจอ กันบังเกม */
+            background: rgba(30, 30, 45, 0.9); /* สีเข้มโปร่งแสงนิดๆ */
+            border-radius: 10px;
+            overflow-y: auto; /* ให้ Scroll ได้ */
+            padding: 10px;
+            font-size: 12px;
+            z-index: 50;
+            border: 1px solid rgba(255,255,255,0.1);
+            pointer-events: auto; /* !สำคัญ! ต้องมีบรรทัดนี้ถึงจะ Scroll ได้ */
+            transition: all 0.3s ease;
+
+            /* Custom Scrollbar (Chrome/Safari) */
+            scrollbar-width: thin;
+            scrollbar-color: #50cd89 #1e1e2d;
+        }
+        .log-overlay::-webkit-scrollbar {
+            width: 6px;
+        }
+        .log-overlay::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1);
+            border-radius: 3px;
+        }
+        .log-overlay::-webkit-scrollbar-thumb {
+            background-color: #50cd89; /* สีเขียว Metronic */
+            border-radius: 3px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            color: #a1a5b7; /* สีเทาอ่านสบายตา */
+            text-shadow: none;
+            border-bottom: 1px dashed rgba(255,255,255,0.05);
+            padding-bottom: 2px;
+        }
+        .log-entry.highlight { color: #ffe600; font-weight: bold; }
+        .log-entry.danger { color: #f1416c; font-weight: bold; }
+        .log-entry.system { color: #009ef7; font-style: italic;}
+
+        #mobileLogToggle {
+            display: none; /* Desktop ไม่โชว์ปุ่มนี้ */
+            position: absolute;
+            top: 110px;
+            right: 10px;
+            z-index: 51;
+            border-radius: 50%;
+            width: 40px; height: 40px;
+            padding: 0;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        /* Responsive: มือถือ (หน้าจอเล็กกว่า 768px) */
+        @media (max-width: 768px) {
+            .log-overlay {
+                top: 160px; /* ดันลงมาอีกหน่อยเพราะ Header มือถืออาจจะสูง */
+                width: 90%; /* กว้างเกือบเต็มจอ */
+                right: 5%; /* จัดกึ่งกลาง */
+                max-height: 30vh;
+                display: none; /* ซ่อนไว้ก่อน */
+            }
+            .log-overlay.show {
+                display: block; /* กดปุ่มแล้วค่อยโชว์ */
+            }
+
+            #mobileLogToggle {
+                display: block; /* โชว์ปุ่ม Toggle บนมือถือ */
+            }
+
+            /* ปรับแต่ง Deck ให้น้อยลงในมือถือ */
+            .game-deck { width: 90px; height: 130px; }
+            .my-hand-area { height: 160px; }
+        }
+
+        /* Timer Bar */
+        #timerContainer {
+            position: absolute;
+            top: 0; left: 0; width: 100%;
+            height: 10px;
+            z-index: 100;
+        }
+
+        .offline-player {
+            border: 2px dashed #f1416c !important; /* ขอบแดงประ */
+            opacity: 0.7;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(241, 65, 108, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(241, 65, 108, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(241, 65, 108, 0); }
+        }
+        /* Selection Grid */
+        .selection-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr); /* 2 คอลัมน์ */
+            gap: 10px;
+        }
+
+        .select-btn {
+            background: #2b2b40;
+            border: 1px solid #444;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .select-btn:hover {
+            background: #3699ff; /* Metronic Blue */
+            border-color: #3699ff;
+            transform: translateY(-2px);
+        }
+
+        .select-btn i {
+            font-size: 24px;
+            margin-bottom: 5px;
+            display: block;
+        }
+
+        .select-btn .sub-text {
+            font-size: 10px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div id="loginScreen">
+        <div class="card p-4 shadow-lg" style="width: 350px; border-radius: 15px;">
+            <div class="text-center mb-4">
+                <h1 class="fw-bold">🐱 BOOM!</h1>
+                <p class="text-muted">ใส่ชื่อแล้วลุยเลยเพื่อน</p>
+            </div>
+            <input type="text" id="nameInput" class="form-control form-control-lg mb-3" placeholder="ชื่อของคุณ (เช่น พี่โต)">
+            <button onclick="connectAndJoin()" class="btn btn-primary btn-lg w-100 mb-2">
+                <i class="fas fa-play me-2"></i> เข้าห้องเกม
+            </button>
+            <div id="connectionStatus" class="text-center mt-2 text-muted small">Ready to connect...</div>
+        </div>
+    </div>
+    <div id="gameScreen">
+
+        <div id="timerContainer">
+            <div id="timerBar" style="width: 0%; height: 100%; background: #f1416c; transition: width 0s linear;"></div>
+        </div>
+        <div id="timerText" class="position-absolute w-100 text-center fw-bold" style="top: 15px; color: #f1416c; text-shadow: 1px 1px 0 #000; z-index: 101;"></div>
+
+        <div class="d-flex justify-content-between align-items-center bg-dark p-2 shadow-sm" style="z-index: 20;">
+            <div class="opponent-area flex-grow-1" id="opponentsBox">
+            </div>
+            <div>
+                <button onclick="startGame()" id="startBtn" class="btn btn-sm btn-success ms-2" disabled><i class="fas fa-flag"></i> Start</button>
+                <button onclick="resetGame()" id="resetBtn" class="btn btn-sm btn-warning ms-1" disabled><i class="fas fa-sync"></i> Reset</button>
+            </div>
+        </div>
+
+        <button id="mobileLogToggle" class="btn btn-dark border-light" onclick="toggleMobileLog()">
+            <i class="fas fa-history text-warning"></i>
+        </button>
+
+        <div class="log-overlay" id="gameLogBox">
+            <div class="text-center text-muted small mb-2">--- Game Log ---</div>
+        </div>
+
+        <div class="table-area">
+            <div class="game-deck" id="deckArea" onclick="drawCard()">
+                <div class="text-center">
+                    <i class="fas fa-cat fa-3x text-white mb-2"></i>
+                    <div class="fw-bold text-white">DECK</div>
+                    <div class="small text-white opacity-75">Click to Draw</div>
+                </div>
+                <div class="deck-count" id="deckCountBadge">0</div>
+            </div>
+
+            <div class="game-deck" style="background: #3f4254; cursor: default;">
+                <div class="text-center text-muted">
+                    <i class="fas fa-trash fa-2x mb-2"></i>
+                    <div>DISCARD</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-bar" id="actionBar">
+            <button id="playBtn" class="btn btn-warning action-btn btn-lg me-2" style="display:none;" onclick="sendPlayRequest()">
+                🔥 Play Selected
+            </button>
+            <div id="turnIndicator" class="badge bg-success p-2 fs-6 shadow-sm" style="display:none;">
+                👉 ตาของคุณแล้ว!
+            </div>
+        </div>
+
+        <div class="my-hand-area" id="myHandBox">
+        </div>
+
+    </div>
+    <div class="modal fade" id="selectionModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark text-white border-secondary shadow-lg">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title" id="modalTitle">🎯 เลือกเป้าหมาย</h5>
+                </div>
+                <div class="modal-body" id="modalBody">
+                </div>
+                <div class="modal-footer border-secondary justify-content-center">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="cancelSelection()">ยกเลิก</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let stompClient = null;
+        let seenSecrets = new Set();
+        let selectedIndices = [];
+        let myName = "";
+        let isMyTurn = false;
+        let amIVictim = false; // โดนขอการ์ดไหม
+
+        // Mapping สีและไอคอนการ์ด
+        const CARD_STYLES = {
+            'BOOMS': { color: '#f1416c', icon: 'fa-bomb' },
+            'DEFUSE': { color: '#50cd89', icon: 'fa-wrench' },
+            'ATTACK': { color: '#ffc700', icon: 'fa-khanda' },
+            'ATTACK_TO': { color: '#ff9f43', icon: 'fa-bullseye' },
+            'SKIP': { color: '#009ef7', icon: 'fa-forward' },
+            'FAVOR': { color: '#7239ea', icon: 'fa-hand-holding-heart' },
+            'SHUFFLE': { color: '#a1a5b7', icon: 'fa-random' },
+            'SEE_THE_FUTURE': { color: '#e4e6ef', icon: 'fa-eye', textColor: '#333' },
+            'CHANGE_THE_FUTURE': { color: '#b5b5c3', icon: 'fa-clock', textColor: '#333' },
+            'NOPE': { color: '#d9214e', icon: 'fa-ban' },
+            'UNDER': { color: '#00c2cb', icon: 'fa-arrow-down' },
+            'MEOW': { color: '#fff', icon: 'fa-cat', textColor: '#333', border: '2px dashed #999' }
+        };
+
+        function connectAndJoin() {
+            myName = document.getElementById('nameInput').value.trim();
+            if(!myName) { alert("ใส่ชื่อก่อนสิครับ!"); return; }
+
+            document.getElementById('connectionStatus').innerText = "Connecting...";
+
+            let socket = new SockJS('/ws-meow-booms');
+            stompClient = Stomp.over(socket);
+            stompClient.debug = null; // ปิด debug log รก console
+
+            stompClient.connect({}, function (frame) {
+                console.log('Connected');
+                document.getElementById('loginScreen').style.display = 'none';
+                document.getElementById('gameScreen').style.display = 'flex';
+                ui.init();
+
+                // Subscribe
+                stompClient.subscribe('/topic/game-progress', function (message) {
+                    let body = JSON.parse(message.body);
+                    if (body.allPlayers) window.lastGameState = body;
+                    updateUI(body);
+                });
+
+                // Auto Join
+                stompClient.send(`/app/join`, {}, myName);
+
+                // Enable Admin Buttons
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('resetBtn').disabled = false;
+            });
+        }
+
+        const ui = {
+            modal: null,
+            resolve: null,
+            reject: null,
+
+            init: function() {
+                this.modal = new bootstrap.Modal(document.getElementById('selectionModal'));
+            },
+
+            // ฟังก์ชันเลือกผู้เล่น (คืนค่าเป็นชื่อ)
+            pickPlayer: function(title = "เลือกผู้เล่น") {
+                return new Promise((resolve, reject) => {
+                    this.resolve = resolve;
+                    this.reject = reject;
+
+                    document.getElementById('modalTitle').innerText = title;
+                    const body = document.getElementById('modalBody');
+                    body.innerHTML = '<div class="selection-grid" id="gridArea"></div>';
+                    const grid = document.getElementById('gridArea');
+
+                    // ดึงรายชื่อผู้เล่นจาก State ล่าสุด
+                    const players = window.lastGameState.allPlayers;
+                    const myName = document.getElementById('nameInput').value;
+
+                    players.forEach(p => {
+                        if (p.name === myName) return; // ไม่เลือกตัวเอง
+                        if (p.exploded && !p.online) return; // ไม่เลือกคนที่ตายและไม่อยู่
+
+                        let btn = document.createElement('div');
+                        btn.className = 'select-btn';
+                        // ใส่ icon ตามสถานะ
+                        let icon = p.exploded ? 'fa-skull-crossbones' : 'fa-user';
+                        btn.innerHTML = `<i class="fas ${icon}"></i> <div>${p.name}</div> <div class="sub-text">${p.hand.length} การ์ด</div>`;
+
+                        btn.onclick = () => {
+                            this.close();
+                            resolve(p.name);
+                        };
+                        grid.appendChild(btn);
+                    });
+
+                    this.modal.show();
+                });
+            },
+
+            // ฟังก์ชันเลือกประเภทการ์ด (คืนค่าเป็น ENUM String)
+            pickCardType: function(title = "อยากได้การ์ดอะไร?") {
+                return new Promise((resolve, reject) => {
+                    this.resolve = resolve;
+                    this.reject = reject;
+
+                    document.getElementById('modalTitle').innerText = title;
+                    const body = document.getElementById('modalBody');
+                    body.innerHTML = '<div class="selection-grid" id="gridArea"></div>';
+                    const grid = document.getElementById('gridArea');
+
+                    // รายชื่อการ์ดที่เลือกได้ (ตัด MEOW/BOOM ออกถ้าไม่อยากให้เลือก)
+                    const types = ['DEFUSE', 'ATTACK', 'SKIP', 'FAVOR', 'SHUFFLE', 'SEE_THE_FUTURE', 'NOPE'];
+
+                    types.forEach(type => {
+                        let style = CARD_STYLES[type] || { icon: 'fa-question', color: '#ccc' };
+
+                        let btn = document.createElement('div');
+                        btn.className = 'select-btn';
+                        btn.style.borderColor = style.color; // ใส่สีขอบตามประเภทการ์ด
+
+                        btn.innerHTML = `<i class="fas ${style.icon}" style="color:${style.color}"></i> <div>${type}</div>`;
+
+                        btn.onclick = () => {
+                            this.close();
+                            resolve(type);
+                        };
+                        grid.appendChild(btn);
+                    });
+
+                    this.modal.show();
+                });
+            },
+
+            // ฟังก์ชันเลือกรายการจากกองทิ้ง (สำหรับ Combo 5 ใบ)
+            pickFromList: function(title, items) {
+                return new Promise((resolve, reject) => {
+                    this.resolve = resolve;
+                    this.reject = reject;
+
+                    document.getElementById('modalTitle').innerText = title;
+                    const body = document.getElementById('modalBody');
+                    body.innerHTML = '<div class="d-grid gap-2" id="listArea"></div>'; // แนวตั้ง
+                    const list = document.getElementById('listArea');
+
+                    items.forEach(item => {
+                        // item format: "0:ATTACK"
+                        let parts = item.split(":");
+                        let idx = parts[0];
+                        let type = parts[1];
+                        let style = CARD_STYLES[type] || {};
+
+                        let btn = document.createElement('button');
+                        btn.className = 'btn btn-dark border-secondary text-start p-3';
+                        btn.innerHTML = `<i class="fas ${style.icon} me-2" style="color:${style.color}"></i> ${type}`;
+                        btn.onclick = () => {
+                            this.close();
+                            resolve(parseInt(idx));
+                        };
+                        list.appendChild(btn);
+                    });
+
+                    this.modal.show();
+                });
+            },
+
+            close: function() {
+                this.modal.hide();
+            }
+        };
+
+        function cancelSelection() {
+            if(ui.reject) ui.reject("Cancelled");
+            ui.close();
+        }
+
+        // --- Core UI Update Function ---
+        function updateUI(state) {
+            if(state.content && state.content.startsWith("Error")) {
+                handleError(state);
+                return;
+            }
+
+            if(!state.allPlayers) return;
+
+            // 1. Update Game Info
+            document.getElementById('deckCountBadge').innerText = state.deckSize;
+
+            const startBtn = document.getElementById('startBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const deckArea = document.getElementById('deckArea');
+
+            if (state.isGameStarted) {
+                // --- กำลังเล่น (In-Game) ---
+                startBtn.style.display = 'none';   // ซ่อน Start
+                resetBtn.style.display = 'inline-block'; // โชว์ Reset
+                resetBtn.disabled = false;
+
+                // เปิดให้กดกองการ์ดได้
+                deckArea.style.opacity = "1";
+                deckArea.style.pointerEvents = "auto";
+            } else {
+                // --- อยู่ใน Lobby หรือ จบเกมแล้ว (Lobby) ---
+                startBtn.style.display = 'inline-block'; // โชว์ Start ให้เริ่มใหม่
+                resetBtn.style.display = 'none';   // ซ่อน Reset (หรือจะโชว์ไว้เผื่อล้างห้องก็ได้)
+
+                // ถ้าคนไม่ครบ 2 คน ห้ามกด Start
+                startBtn.disabled = (state.allPlayers.length < 2);
+
+                // ปิดกองการ์ดไม่ให้กดเล่น
+                deckArea.style.opacity = "0.5";
+                deckArea.style.pointerEvents = "none";
+            }
+
+            // 2. Check Turn & Status
+            isMyTurn = (state.currentTurn === myName);
+            amIVictim = (state.pendingActionPlayer === myName && state.pendingActionType === `GIVE_CARD`);
+
+            // Update Turn Indicator
+            const turnInd = document.getElementById('turnIndicator');
+            if(isMyTurn) {
+                turnInd.style.display = 'inline-block';
+                turnInd.innerText = "👉 ตาของคุณแล้ว! (Your Turn)";
+                turnInd.className = "badge bg-success p-2 fs-6 shadow-sm";
+                document.getElementById('deckArea').style.opacity = "1";
+                document.getElementById('deckArea').style.pointerEvents = "auto";
+            } else if (amIVictim) {
+                turnInd.style.display = 'inline-block';
+                turnInd.innerText = "🚨 เลือกการ์ด 1 ใบเพื่อส่งให้เพื่อน!";
+                turnInd.className = "badge bg-danger p-2 fs-6 shadow-sm";
+            } else {
+                turnInd.style.display = 'none';
+                document.getElementById('deckArea').style.opacity = "0.5";
+                document.getElementById('deckArea').style.pointerEvents = "none";
+            }
+
+            // 3. Render Opponents
+            renderOpponents(state.allPlayers, state.currentTurn);
+
+            // 4. Render My Hand
+            const me = state.allPlayers.find(p => p.name === myName);
+            if(me) renderMyHand(me.hand);
+
+            // 5. Update Play Button
+            updatePlayButton();
+
+            // 6. Logs & Secrets
+            processLogs(state.logs);
+        }
+
+        function renderOpponents(players, currentTurn) {
+            const box = document.getElementById('opponentsBox');
+            box.innerHTML = "";
+
+            players.forEach(p => {
+                if(p.name === myName) return; // ไม่แสดงตัวเองข้างบน
+
+                let div = document.createElement('div');
+                div.className = `opponent-card ${p.name === currentTurn ? 'active-turn' : ''} ${!p.online ? 'offline-player' : ''}`;
+
+                let statusIcon = p.exploded ? '💀' : (p.online ? '👤' : '🔌');
+                if(p.exploded) div.style.opacity = '0.5';
+
+                div.innerHTML = `
+                <div class="fs-4">${statusIcon}</div>
+                <div class="fw-bold small text-white">${p.name}</div>
+                <div class="badge bg-secondary mt-1">${p.hand.length} ใบ</div>
+            `;
+                box.appendChild(div);
+            });
+        }
+
+        function renderMyHand(hand) {
+            const box = document.getElementById('myHandBox');
+            box.innerHTML = "";
+
+            hand.forEach((card, index) => {
+                let style = CARD_STYLES[card.type] || CARD_STYLES['MEOW'];
+                if(card.type.startsWith("MEOW")) style = CARD_STYLES['MEOW']; // Handle MEOW_A, B...
+
+                let div = document.createElement('div');
+                div.className = `playing-card ${selectedIndices.includes(index) ? 'selected' : ''}`;
+                if(amIVictim) div.className += " give-mode";
+
+                // Apply Styles
+                div.style.backgroundColor = style.color;
+                if(style.textColor) div.style.color = style.textColor;
+                else div.style.color = '#fff';
+                if(style.border) div.style.border = style.border;
+
+                // Content
+                div.innerHTML = `
+                <div class="card-type">${index+1}</div>
+                <div class="card-icon"><i class="fas ${style.icon}"></i></div>
+                <div class="card-name">${card.name}</div>
+            `;
+
+                // Logic Click
+                div.onclick = () => onCardClick(index, card.type);
+
+                // Handle Logic Enable/Disable
+                if(!isMyTurn && !amIVictim) {
+                    if(card.type !== 'NOPE') {
+                        div.style.opacity = "0.6";
+                        div.style.filter = "grayscale(80%)";
+                        // allow clicking only if it's NOPE
+                        div.onclick = (e) => {
+                            if(card.type === 'NOPE') toggleSelectCard(index);
+                            else e.stopPropagation();
+                        };
+                    }
+                }
+                if(card.type === 'DEFUSE') {
+                    div.style.cursor = 'not-allowed';
+                    div.onclick = null; // Defuse กดไม่ได้
+                }
+
+                box.appendChild(div);
+            });
+        }
+
+        function onCardClick(index, type) {
+            if(amIVictim) {
+                if(confirm("ส่งการ์ดใบนี้ให้เพื่อน?")) giveCardAction(index);
+            } else {
+                toggleSelectCard(index);
+            }
+        }
+
+        function toggleSelectCard(index) {
+            if(selectedIndices.includes(index)) {
+                selectedIndices = selectedIndices.filter(i => i !== index);
+            } else {
+                selectedIndices.push(index);
+            }
+            // Force Re-render locally for speed
+            if(window.lastGameState) {
+                renderMyHand(window.lastGameState.allPlayers.find(p => p.name === myName).hand);
+                updatePlayButton();
+            }
+        }
+
+        function updatePlayButton() {
+            const btn = document.getElementById('playBtn');
+            if(selectedIndices.length > 0) {
+                btn.style.display = 'inline-block';
+                btn.innerHTML = `🔥 Play (${selectedIndices.length})`;
+
+                // Check for NOPE (Special Style)
+                let hand = window.lastGameState.allPlayers.find(p => p.name === myName).hand;
+                if(selectedIndices.length === 1 && hand[selectedIndices[0]].type === 'NOPE') {
+                    btn.className = "btn btn-danger action-btn btn-lg me-2";
+                    btn.innerHTML = "⛔ NOPE!";
+                } else {
+                    btn.className = "btn btn-warning action-btn btn-lg me-2";
+                }
+
+            } else {
+                btn.style.display = 'none';
+            }
+        }
+
+        function processLogs(logs) {
+            const box = document.getElementById('gameLogBox');
+            if(!logs) return;
+
+            // Clear and Rebuild only if changed (Simple check by length or first item ID)
+            // For now, just rebuild for simplicity but filter special logs
+            const isScrolledToBottom = box.scrollHeight - box.clientHeight <= box.scrollTop + 50;
+
+            box.innerHTML = '<div class="text-center text-muted small mb-2">--- Game Log ---</div>';
+
+            logs.forEach(line => {
+                // --- Secret / Timer Handling (Logic เดิม) ---
+                if(line.startsWith("SECRET|") || line.startsWith("GIVE|") || line.startsWith("STEAL|") || line.startsWith("ALTER|") || line.startsWith("PICK_DISCARD|") || line.startsWith("TIMER_START|") || line.startsWith("TIMER_RESET|")) {
+                    handleSpecialLog(line); // แยกฟังก์ชันไปจัดการ
+                    return; // ไม่ต้องแสดงในกล่อง log
+                }
+
+                let div = document.createElement('div');
+                div.className = "log-entry";
+                let timeEndIdx = line.indexOf(']') + 1;
+                let timeStr = line.substring(0, timeEndIdx);
+                let contentStr = line.substring(timeEndIdx);
+
+                div.innerHTML = `<span class="opacity-50 small me-1">${timeStr}</span> ${contentStr}`;
+
+                if(line.includes("ระเบิด") || line.includes("ตาย")) div.className += " danger";
+                if(line.includes("เริ่มเกม")) div.className += " highlight";
+                if(line.includes("จั่วการ์ด") || line.includes("ผ่าน")) div.className += " system"; // ข้อความทั่วไปลดความเด่นลง
+
+                box.appendChild(div);
+            });
+
+            if(isScrolledToBottom || logs.length > 0) {
+                box.scrollTop = box.scrollHeight;
+            }
+
+            const btn = document.getElementById('mobileLogToggle');
+            btn.classList.add('btn-warning');
+            setTimeout(() => btn.classList.remove('btn-warning'), 500);
+        }
+
+        // --- Actions ---
+        function startGame() { stompClient.send(`/app/start`, {}, {}); }
+        function resetGame() { stompClient.send(`/app/reset`, {}, {}); }
+        function drawCard() { stompClient.send(`/app/draw`, {}, myName); }
+
+        function sendPlayRequest() {
+            // ... (Logic เดิมของคุณ Copy มาใส่ตรงนี้ได้เลย) ...
+            // เพื่อความกระชับ ผมขอละไว้ในฐานที่เข้าใจ (ใช้ Logic เดิมที่เขียนไว้ในข้อความก่อนหน้า)
+            // แค่เปลี่ยน alert เป็น UI สวยๆ ถ้าว่าง
+
+            executePlayRequestLogic(); // เรียกฟังก์ชัน Logic เดิม
+        }
+
+        // เอา Logic เดิมของคุณมาแปะตรงนี้
+        async function executePlayRequestLogic() {
+            let name = myName;
+            let target = null;
+            let request = null;
+            let myHand = window.lastGameState.allPlayers.find(p => p.name === name).hand;
+
+            // Safety check
+            if(selectedIndices.length === 0) return;
+
+            let firstCardIndex = selectedIndices[0];
+            let firstCardType = myHand[firstCardIndex].type;
+
+            try {
+                // --- Logic เดิม 100% ---
+                if (selectedIndices.length === 1) {
+                    if (firstCardType === 'FAVOR') {
+                        // เปลี่ยน prompt เป็น ui.pickPlayer
+                        target = await ui.pickPlayer("จะขอการ์ดใคร?");
+                    } else if (firstCardType === `ATTACK_TO`) {
+                        target = await ui.pickPlayer("ล็อคเป้าโจมตีใส่ใคร?");
+                    }
+                    request = { 'playerName': name, 'cardIndices': selectedIndices, 'targetPlayerName': target };
+                }
+                else if (selectedIndices.length === 2) {
+                    let secondCardType = myHand[selectedIndices[1]].type;
+
+                    let isC1Meow = firstCardType.startsWith('MEOW');
+                    let isC2Meow = secondCardType.startsWith('MEOW');
+
+                    if (isC1Meow && isC2Meow) {
+                        // ตรวจสอบเงื่อนไข Wildcard หรือ เหมือนกัน
+                        let isSame = (firstCardType === secondCardType);
+                        let hasWildcard = (firstCardType === 'MEOW' || secondCardType === 'MEOW');
+
+                        if (isSame || hasWildcard) {
+                            // เงื่อนไขถูกต้อง -> ถามชื่อเหยื่อ
+                            target = await ui.pickPlayer("จะขโมยการ์ดใคร? (สุ่ม)");
+
+                            // สร้าง Request สำหรับ 2 ใบ
+                            request = {
+                                'playerName': name,
+                                'cardIndices': selectedIndices,
+                                'targetPlayerName': target
+                            };
+                        } else {
+                            alert("การ์ดแมวคู่นี้จับคู่ไม่ได้! (ต้องชนิดเดียวกัน หรือใช้คู่กับการ์ด 'เมี๊ยว ๆ')");
+                            return;
+                        }
+                    } else {
+                        alert("ต้องใช้การ์ดแมว (เมี๊ยว) เท่านั้นในการทำ Combo!");
+                        return;
+                    }
+                }
+                else if (selectedIndices.length === 3) {
+                    let type1 = myHand[selectedIndices[0]].type;
+                    let type2 = myHand[selectedIndices[1]].type;
+                    let type3 = myHand[selectedIndices[2]].type;
+
+                    const isMeow1 = type1.startsWith("MEOW");
+                    const isMeow2 = type2.startsWith("MEOW");
+                    const isMeow3 = type3.startsWith("MEOW");
+
+                    if (!isMeow1 || !isMeow2 || !isMeow3) {
+                        alert("ต้องใช้การ์ดแมว (เมี๊ยว) เท่านั้นในการทำ Combo!");
+                        return;
+                    }
+
+                    const types = [type1, type2, type3];
+
+                    const hasWildcard = types.includes("MEOW");
+
+                    let isValidCombo = true;
+
+                    if (hasWildcard) {
+                        // เอาใบที่ไม่ใช่ MEOW มาเทียบกัน
+                        const nonWildcardTypes = types.filter(t => t !== "MEOW");
+
+                        if (nonWildcardTypes.length > 0) {
+                            const baseType = nonWildcardTypes[0];
+                            isValidCombo = nonWildcardTypes.every(t => t === baseType);
+                        }
+                    } else {
+                        // ไม่มี wildcard → ต้องเหมือนกันทั้ง 3 ใบ
+                        isValidCombo = (type1 === type2 && type2 === type3);
+                    }
+
+                    if (!isValidCombo) {
+                        alert("การ์ดแมวคู่นี้จับคู่ไม่ได้! (ต้องชนิดเดียวกัน หรือใช้คู่กับการ์ด 'เมี๊ยว ๆ')");
+                        return;
+                    }
+
+                    target = await ui.pickPlayer("จะขโมยการ์ดใคร?");
+
+                    let wantCard = await ui.pickCardType("อยากได้การ์ดอะไร?");
+
+                    request = {
+                        'playerName': name,
+                        'cardIndices': selectedIndices,
+                        'targetPlayerName': target,
+                        'requestedCardType': wantCard // ส่งค่าไป
+                    };
+                }
+                else if (selectedIndices.length === 5) {
+                    let selectedCards = selectedIndices.map(idx => myHand[idx]);
+
+                    // 1. ต้องเป็นการ์ดตระกูล MEOW ทั้งหมด
+                    let isAllMeow = selectedCards.every(c => c.type.startsWith("MEOW"));
+                    if (!isAllMeow) {
+                        alert("ต้องใช้การ์ดเมี๊ยวเท่านั้นในการทำ Combo!");
+                        return;
+                    }
+
+                    let nonMeowTypes = selectedCards
+                        .filter(c => c.type !== `MEOW`)
+                        .map(c => c.type);
+
+                    let uniqueTypes = new Set(nonMeowTypes);
+
+                    if (uniqueTypes.size !== nonMeowTypes.length) {
+                        alert("Combo 5 ใบ: การ์ดอื่นที่ไม่ใช่ 'เมี๊ยว ๆ' ห้ามซ้ำกัน!");
+                        return;
+                    }
+
+                    request = {
+                        'playerName': name,
+                        'cardIndices': selectedIndices,
+                        'targetPlayerName': null
+                    };
+                }
+
+                if (request) {
+                    stompClient.send("/app/play-card", {}, JSON.stringify(request));
+                    selectedIndices = [];
+                    updatePlayButton();
+                }
+            } catch (error) {
+                console.log("Selection cancelled:", error);
+                // ไม่ต้องทำอะไรถ้ากดยกเลิก
+            }
+        }
+
+        function giveCardAction(index) {
+            let request = { 'playerName': myName, 'cardIndices': [index] };
+            stompClient.send("/app/give-card", {}, JSON.stringify(request));
+        }
+
+        function handleSpecialLog(logLine) {
+            if (logLine.startsWith("SECRET|")) {
+
+                if (seenSecrets.has(logLine)) {
+                    return;
+                }
+
+                seenSecrets.add(logLine);
+
+                let parts = logLine.split("|");
+                let targetName = parts[2];
+                let cards = parts[3];
+                let myName = document.getElementById(`nameInput`).value;
+
+                if (targetName === myName) {
+                    setTimeout(() => {
+                        alert("🔮 อนาคต 3 ใบถัดไปคือ:\n" + cards.replaceAll(",", "\n"));
+                    }, 500);
+                }
+                return; // ไม่ต้องเอาบรรทัดนี้ไปโชว์ในกล่อง Log รวม
+            }
+
+            if (logLine.startsWith("GIVE|")) {
+                if (seenSecrets.has(logLine)) {
+                    return;
+                }
+
+                seenSecrets.add(logLine);
+
+                let parts = logLine.split("|");
+                let targetName = parts[2];
+                let victim = parts[3];
+                let card = parts[4];
+                let myName = document.getElementById(`nameInput`).value;
+
+                if (targetName === myName) {
+                    setTimeout(() => {
+                        alert(`ได้รับ ${card} จาก ${victim}`);
+                    }, 500);
+                }
+
+                return;
+            }
+
+            if (logLine.startsWith("STEAL|")) {
+                if (seenSecrets.has(logLine)) {
+                    return;
+                }
+
+                seenSecrets.add(logLine);
+
+                let parts = logLine.split("|");
+                let victim = parts[2];
+                let targetName = parts[3];
+                let card = parts[4];
+                let myName = document.getElementById(`nameInput`).value;
+
+                if (targetName === myName) {
+                    setTimeout(() => {
+                        alert(`ได้รับ ${card} จาก ${victim}`);
+                    }, 500);
+                }
+
+                if (victim === myName) {
+                    setTimeout(() => [
+                        alert(`เสียการ์ด ${card} ให้ ${targetName}`)
+                    ])
+                }
+
+                return;
+            }
+
+            if (logLine.startsWith(`ALTER|`)) {
+                if (seenSecrets.has(logLine)) {
+                    return;
+                }
+                seenSecrets.add(logLine);
+
+                let parts = logLine.split("|");
+                let targetName = parts[2];
+                let cardsStr = parts[3]; // "SKIP,ATTACK,DEFUSE"
+                let myName = document.getElementById(`nameInput`).value;
+
+                if (targetName === myName) {
+                    setTimeout(() => {
+                        let cardsArray = cardsStr.split(`,`);
+
+                        let promptMsg = `🔮 จงเรียงลำดับอนาคตใหม่ (Top -> Bottom)\n`;
+                        cardsArray.forEach((c, i) => {
+                            promptMsg += `[${i+1}] ${c}\n`;
+                        })
+                        promptMsg += `\nใส่ลำดับเลขคั่นด้วย comma (เช่น 3,1,2):`;
+
+                        let input = prompt(promptMsg, `1,2,3`);
+                        if (input) {
+                            let indices = input.split(`,`).map(s => parseInt(s.trim()) - 1);
+                            let newOrder = [];
+                            try {
+                                indices.forEach(idx => {
+                                    if(cardsArray[idx]) newOrder.push(cardsArray[idx]);
+                                });
+                            } catch {
+                                alert("ใส่เลขผิด! อนาคตจะถูกเรียงมั่วๆ");
+                                newOrder = cardsArray;
+                            }
+                            sendAlterFuture(newOrder);
+                        }
+                    }, 500);
+                }
+                return;
+            }
+
+            if (logLine.startsWith(`PICK_DISCARD|`)) {
+                if (seenSecrets.has(logLine)) return;
+                seenSecrets.add(logLine);
+
+                let parts = logLine.split(`|`);
+                let targetName = parts[2];
+                let listStr = parts[3];
+                let items = listStr.split(",");
+
+                if (targetName === myName) {
+                    ui.pickFromList("🧟 จงเลือกการ์ดที่จะขุดจากหลุม", items)
+                        .then(idx => {
+                            sendPickDiscard(idx);
+                        })
+                        .catch(() => console.log("Cancel pick"));
+                }
+                return;
+            }
+
+            if (logLine.startsWith("TIMER_START|") || logLine.startsWith("TIMER_RESET|")) {
+                if (seenSecrets.has(logLine)) return;
+                seenSecrets.add(logLine);
+
+                let parts = logLine.split(`|`);
+
+                let seconds = parseInt(parts[2]);
+
+                startTimer(seconds);
+            }
+        }
+
+        function handleError(message) {
+            if (message.errorTarget && message.errorTarget !== myName) return;
+            alert(message.content); // หรือจะใช้ Bootstrap Toast ก็ได้
+            selectedIndices = [];
+            if (window.lastGameState) updateUI(window.lastGameState);
+
+            if (message.errorTarget === myName) {
+                alert(message.content); // "ชื่อนี้มีคนใช้แล้ว!"
+                // อาจจะดีดกลับไปหน้า Login หรือให้เปลี่ยนชื่อ
+                document.getElementById('loginScreen').style.display = 'flex';
+                document.getElementById('gameScreen').style.display = 'none';
+            }
+        }
+
+        // --- Timer Logic (จากข้อความก่อนหน้า) ---
+        let timerInterval = null;
+        function startTimer(seconds) {
+            clearInterval(timerInterval);
+            let timeLeft = seconds;
+            let timerText = document.getElementById("timerText");
+            let timerBar = document.getElementById("timerBar");
+
+            timerBar.style.transition = 'none';
+            timerBar.style.width = '100%';
+            void timerBar.offsetWidth;
+
+            setTimeout(() => {
+                timerBar.style.transition = `width ${seconds}s linear`;
+                timerBar.style.width = '0%';
+            }, 10);
+
+            timerText.innerText = `⏳ ACTION PENDING... ${timeLeft}s`;
+
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                if (timeLeft >= 0) timerText.innerText = `⏳ ACTION PENDING... ${timeLeft}s`;
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    timerText.innerText = "";
+                }
+            }, 1000);
+        }
+
+        function toggleMobileLog() {
+            const logBox = document.getElementById('gameLogBox');
+            logBox.classList.toggle('show');
+
+            // ถ้าเปิด ให้เลื่อนลงล่างสุดทันที
+            if(logBox.classList.contains('show')) {
+                logBox.scrollTop = logBox.scrollHeight;
+            }
+        }
+
+    </script>
+</body>
+</html>
