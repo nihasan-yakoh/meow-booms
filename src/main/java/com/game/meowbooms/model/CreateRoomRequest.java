@@ -3,8 +3,8 @@ package com.game.meowbooms.model;
 import lombok.Data;
 
 @Data
-public class PickDiscardRequest {
-    private String roomId;
+public class CreateRoomRequest {
     private String playerName;
-    private int discardIndex;
+    private String token;
+    private String roomName;
 }

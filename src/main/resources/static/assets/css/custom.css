@@ -1,0 +1,600 @@
+@import url('https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;800&display=swap');
+
+:root {
+    --card-width: 90px;
+    --card-height: 130px;
+    --bg-color: #1e1e2d; /* Metronic Dark */
+}
+
+body {
+    background-color: var(--bg-color);
+    color: #fff;
+    font-family: 'Poppins', sans-serif;
+    overflow: hidden; /* ห้าม scroll หน้าจอหลัก */
+    height: 100vh;
+}
+
+/* --- Login Screen --- */
+#loginScreen {
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #2c3e50 0%, #000000 100%);
+    z-index: 9999;
+    position: absolute;
+    top: 0; left: 0; width: 100%;
+}
+
+/* จัด gameScreen ให้เต็มจอและห้าม Scroll หน้าหลัก */
+#gameScreen {
+    height: 100vh;
+    height: 100dvh; /* สำหรับ Mobile Browser สมัยใหม่ */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* ห้าม Scroll หน้าหลัก */
+    position: relative;
+}
+
+/* Opponents Area (Top) */
+.opponent-area {
+    display: flex;
+    overflow-x: auto;
+    padding: 10px;
+    background: rgba(0,0,0,0.2);
+    white-space: nowrap;
+}
+.opponent-card {
+    background: #3f4254;
+    border-radius: 10px;
+    padding: 5px 10px;
+    margin-right: 10px;
+    min-width: 100px;
+    text-align: center;
+    border: 2px solid transparent;
+}
+.opponent-card.active-turn {
+    border-color: #009ef7; /* Metronic Blue */
+    box-shadow: 0 0 10px #009ef7;
+}
+
+/* Table Area (Center) */
+.table-area {
+    flex-grow: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    gap: 20px;
+}
+
+/* Deck & Discard */
+.game-deck {
+    width: 120px;
+    height: 170px;
+    background: linear-gradient(45deg, #ff9f43, #ff6b6b);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    transition: transform 0.1s;
+    position: relative;
+}
+.game-deck:active { transform: scale(0.95); }
+.deck-count {
+    position: absolute;
+    top: -10px; right: -10px;
+    background: red;
+    border-radius: 50%;
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: bold;
+}
+
+/* กล่องใส่การ์ดในมือ */
+.my-hand-area {
+    /* บังคับให้ติดล่างเสมอ */
+    margin-top: auto;
+
+    /* จัดเรียงแนวนอน */
+    display: flex;
+    gap: 10px;
+    padding: 30px 15px 15px 15px !important;
+    background: rgba(0, 0, 0, 0.3);
+
+    position: relative;
+    z-index: 100;
+
+    /* 🔥 สำคัญ: ทำให้ Scroll แนวนอนได้ในมือถือ */
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    width: 100%;
+
+    /* เพิ่มความสูงขั้นต่ำ เผื่อการ์ดไม่ขึ้น */
+    min-height: 180px;
+    align-items: flex-end; /* ให้การ์ดวางชิดล่าง */
+
+    /* ปรับ Scrollbar ให้สวยงาม (optional) */
+    -webkit-overflow-scrolling: touch; /* ลื่นขึ้นใน iOS */
+}
+
+/* Card Style */
+.playing-card {
+    flex: 0 0 auto; /* ห้ามบีบการ์ด */
+    width: var(--card-width);
+    height: var(--card-height);
+    color: #333;
+    cursor: pointer;
+    flex-shrink: 0;
+
+    /* ... ค่าเดิม ... */
+    position: relative;
+    overflow: hidden; /* เพื่อให้รูปไม่ล้นขอบ */
+    /* เปลี่ยนสีพื้นหลังเป็นขาวรอโหลดรูป */
+
+    /* ... (ค่าเดิมที่มีอยู่) ... */
+
+    /* ปรับระยะซ้อนทับ (แก้ปัญหาบังกัน) */
+    /* ถ้าค่าลบเยอะ (-40px) จะซ้อนเยอะ, ถ้าค่าน้อย (-20px) จะห่างออกมาหน่อย */
+    margin-right: -25px;
+
+    /* พื้นหลัง */
+    background-color: #fff; /* สีพื้นฐานรอโหลด */
+    background-position: center;
+    background-size: cover;
+
+    /* เส้นขอบ */
+    border: 3px solid #222; /* ขอบดำหนาๆ สไตล์การ์ตูน */
+    border-radius: 12px;
+    box-shadow: -3px 3px 8px rgba(0,0,0,0.4);
+
+    transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* เด้งดึ๋งๆ */
+
+    /* จัดเลย์เอาต์ */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px;
+}
+
+.playing-card:hover, .playing-card.selected {
+    transform: translateY(-30px) scale(1.1) rotate(2deg); /* เด้งขึ้น + ขยาย + เอียงนิดๆ */
+    z-index: 100 !important; /* บังคับให้อยู่บนสุดเสมอ */
+    margin-right: 15px; /* ดันเพื่อนข้างๆ ออกไป */
+    box-shadow: 0 15px 30px rgba(0,0,0,0.6);
+}
+
+.playing-card:hover, .playing-card:focus-within {
+    transform: translateY(-25px) scale(1.1); /* เด้งขึ้นและขยายใหญ่ขึ้นนิดนึง */
+    z-index: 1000 !important; /* บังคับให้อยู่บนสุดเสมอ */
+    margin-right: 10px; /* ดันเพื่อนข้างๆ ออกไปให้มีที่ว่างอ่าน */
+    box-shadow: 0 10px 20px rgba(0,0,0,0.5); /* เงาลอยๆ */
+}
+
+.playing-card.selected {
+    border: 3px solid #50cd89; /* Metronic Green */
+    box-shadow: 0 0 15px #50cd89;
+}
+
+.playing-card.give-mode {
+    border: 3px solid #f1416c; /* Metronic Red */
+    background: #fff5f8;
+}
+
+.card-icon {
+    font-size: 24px;
+    text-align: center;
+    margin-top: 10px;
+    opacity: 0.5;
+}
+.card-name {
+
+    word-wrap: break-word;
+
+    /* ... จัดตำแหน่งเดิม ... */
+    position: absolute;
+    bottom: 5px;
+    width: 100%;
+    text-align: center;
+    z-index: 2;
+
+    /* 🔥 1. เปลี่ยนฟอนต์ให้อ่านง่ายขึ้น (แนะนำ Kanit) */
+    font-family: 'Kanit', sans-serif;
+    font-weight: 600; /* ไม่ต้องหนามาก (bold) เพราะจะทำให้เป็นก้อน */
+    line-height: 1.2;
+
+    /* 🔥 2. ทำขอบดำหนาๆ (Text Stroke Simulation) */
+    color: #fff;
+    text-shadow:
+            -1px -1px 0 #000,
+            1px -1px 0 #000,
+            -1px  1px 0 #000,
+            1px  1px 0 #000,
+            2px 2px 4px rgba(0,0,0,0.9); /* เงาฟุ้งๆ ด้านหลังอีกที */
+
+    font-size: 14px; /* หรือปรับตามความเหมาะสม */
+    margin-bottom: 5px;
+    white-space: nowrap; /* ห้ามขึ้นบรรทัดใหม่ */
+}
+.card-type { font-size: 10px; text-align: right; opacity: 0.6; }
+
+/* Action Bar (Above Hand) */
+.action-bar {
+    position: absolute;
+    bottom: 190px; /* เหนือกองการ์ด */
+    width: 100%;
+    text-align: center;
+    pointer-events: none; /* ให้คลิกทะลุได้ */
+}
+.action-btn {
+    pointer-events: auto;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    font-weight: bold;
+    padding: 10px 30px;
+    border-radius: 30px;
+    text-transform: uppercase;
+}
+
+/* Logs (Overlay) */
+.log-overlay {
+    position: absolute;
+    top: 110px;
+    right: 10px;
+    width: 300px; /* กว้างขึ้นหน่อยให้อ่านง่าย */
+    max-height: calc(100vh - 350px); /* สูงไม่เกิน 40% ของจอ กันบังเกม */
+    background: rgba(30, 30, 45, 0.9); /* สีเข้มโปร่งแสงนิดๆ */
+    border-radius: 10px;
+    overflow-y: auto; /* ให้ Scroll ได้ */
+    padding: 10px;
+    font-size: 12px;
+    z-index: 50;
+    border: 1px solid rgba(255,255,255,0.1);
+    pointer-events: auto; /* !สำคัญ! ต้องมีบรรทัดนี้ถึงจะ Scroll ได้ */
+    transition: all 0.3s ease;
+
+    /* Custom Scrollbar (Chrome/Safari) */
+    scrollbar-width: thin;
+    scrollbar-color: #50cd89 #1e1e2d;
+}
+.log-overlay::-webkit-scrollbar {
+    width: 6px;
+}
+.log-overlay::-webkit-scrollbar-track {
+    background: rgba(0,0,0,0.1);
+    border-radius: 3px;
+}
+.log-overlay::-webkit-scrollbar-thumb {
+    background-color: #50cd89; /* สีเขียว Metronic */
+    border-radius: 3px;
+}
+.log-entry {
+    margin-bottom: 5px;
+    color: #a1a5b7; /* สีเทาอ่านสบายตา */
+    text-shadow: none;
+    border-bottom: 1px dashed rgba(255,255,255,0.05);
+    padding-bottom: 2px;
+}
+.log-entry.highlight { color: #ffe600; font-weight: bold; }
+.log-entry.danger { color: #f1416c; font-weight: bold; }
+.log-entry.system { color: #009ef7; font-style: italic;}
+
+#mobileLogToggle {
+    display: none; /* Desktop ไม่โชว์ปุ่มนี้ */
+    position: absolute;
+    top: 110px;
+    right: 10px;
+    z-index: 51;
+    border-radius: 50%;
+    width: 40px; height: 40px;
+    padding: 0;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+}
+
+/* Responsive: มือถือ (หน้าจอเล็กกว่า 768px) */
+@media (max-width: 768px) {
+    .playing-card {
+        margin-right: -30px; /* ในมือถือให้ซ้อนเยอะหน่อยจะได้ไม่ล้นจอ */
+    }
+
+    .playing-card:hover, .playing-card.selected {
+        transform: translateY(-20px); /* เด้งน้อยหน่อย */
+        margin-right: 5px;
+        z-index: 100;
+    }
+    /* 1. ลดพื้นที่ส่วนกลาง (Table Area) */
+    .table-area {
+        flex-grow: 1; /* ให้ยืดหยุ่น */
+        min-height: auto; /* ไม่ต้อง fix ความสูงขั้นต่ำ */
+        padding: 10px 0; /* ลด padding บนล่างให้เหลือนิดเดียว */
+        gap: 15px; /* ลดช่องว่างระหว่างกองจั่วกับกองทิ้ง */
+
+        /* จัดให้อยู่ตรงกลางเป๊ะๆ */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .game-deck {
+        width: 90px;  /* จากเดิมน่าจะใหญ่กว่านี้ */
+        height: 120px;
+        margin: 0 !important; /* ลบ margin รอบนอก */
+    }
+
+    /* ย่อไอคอนแมว/ถังขยะ */
+    .game-deck i {
+        font-size: 2rem !important; /* ลดขนาดไอคอน */
+        margin-bottom: 5px !important;
+    }
+
+    .game-deck .fw-bold {
+        font-size: 0.9rem; /* ลดขนาดตัวหนังสือ DECK/DISCARD */
+    }
+
+    .game-deck .small {
+        font-size: 0.7rem; /* ลดตัวหนังสือเล็กๆ */
+        display: none; /* หรือซ่อนคำว่า 'Click to Draw' ไปเลยถ้ารก */
+    }
+
+    /* 3. ปรับ Action Bar (ปุ่ม Play/Status) ให้ชิดขึ้น */
+    .action-bar {
+        margin-bottom: 5px;
+        padding: 5px;
+        bottom: 220px;
+    }
+
+    /* ปรับปุ่ม Play ให้เล็กลงหน่อยจะได้ไม่บัง */
+    #playBtn {
+        padding: 8px 20px;
+        font-size: 1rem;
+    }
+
+    /* 4. ปรับพื้นที่ Opponent ด้านบนให้เล็กลงด้วย */
+    .opponent-card {
+        width: 70px; /* ลดความกว้าง */
+        padding: 5px;
+    }
+    .opponent-card .fs-4 {
+        font-size: 1.2rem !important; /* ลดขนาด icon คน */
+    }
+
+    .log-overlay {
+        top: 160px; /* ดันลงมาอีกหน่อยเพราะ Header มือถืออาจจะสูง */
+        width: 90%; /* กว้างเกือบเต็มจอ */
+        right: 5%; /* จัดกึ่งกลาง */
+        max-height: 30vh;
+        display: none; /* ซ่อนไว้ก่อน */
+    }
+    .log-overlay.show {
+        display: block; /* กดปุ่มแล้วค่อยโชว์ */
+    }
+
+    #mobileLogToggle {
+        display: block; /* โชว์ปุ่ม Toggle บนมือถือ */
+    }
+
+    /* ปรับแต่ง Deck ให้น้อยลงในมือถือ */
+    .my-hand-area {
+        /* เปลี่ยนจาก height เป็น min-height เพื่อให้ยืดขยายได้ถ้าการ์ดมันดัน */
+        min-height: 190px !important;
+
+        /* ลด Padding ข้างๆ ลงหน่อยจะได้มีที่ให้การ์ดเรียง */
+        padding: 30px 10px 15px 10px !important;
+
+        /* บังคับ Z-Index ให้สูงกว่ากล่องกลางแน่นอน */
+        position: relative;
+        z-index: 200;
+    }
+}
+
+/* Timer Bar */
+#timerContainer {
+    position: absolute;
+    top: 0; left: 0; width: 100%;
+    height: 10px;
+    z-index: 100;
+}
+
+.offline-player {
+    border: 2px dashed #f1416c !important; /* ขอบแดงประ */
+    opacity: 0.7;
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(241, 65, 108, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(241, 65, 108, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(241, 65, 108, 0); }
+}
+/* Selection Grid */
+.selection-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr); /* 2 คอลัมน์ */
+    gap: 10px;
+}
+
+.select-btn {
+    background: #2b2b40;
+    border: 1px solid #444;
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    text-align: center;
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.select-btn:hover {
+    background: #3699ff; /* Metronic Blue */
+    border-color: #3699ff;
+    transform: translateY(-2px);
+}
+
+.select-btn i {
+    font-size: 24px;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.select-btn .sub-text {
+    font-size: 10px;
+    opacity: 0.7;
+}
+
+@keyframes shake-hard {
+    0% { transform: translate(1px, 1px) rotate(0deg); }
+    10% { transform: translate(-1px, -2px) rotate(-1deg); }
+    20% { transform: translate(-3px, 0px) rotate(1deg); }
+    30% { transform: translate(3px, 2px) rotate(0deg); }
+    40% { transform: translate(1px, -1px) rotate(1deg); }
+    50% { transform: translate(-1px, 2px) rotate(-1deg); }
+    60% { transform: translate(-3px, 1px) rotate(0deg); }
+    70% { transform: translate(3px, 1px) rotate(-1deg); }
+    80% { transform: translate(-1px, -1px) rotate(1deg); }
+    90% { transform: translate(1px, 2px) rotate(0deg); }
+    100% { transform: translate(1px, -2px) rotate(-1deg); }
+}
+.shake-hard {
+    animation: shake-hard 0.8s cubic-bezier(.36,.07,.19,.97) both;
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    perspective: 1000px;
+}
+
+/* 💢 2. Effect สั่นเบาๆ (สำหรับคนโดนโจมตี) */
+@keyframes shake-soft {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-3px); }
+    75% { transform: translateX(3px); }
+}
+.shake-soft {
+    animation: shake-soft 0.3s linear infinite;
+    border-color: #ffc700 !important; /* เปลี่ยนขอบเป็นสีเหลือง */
+    box-shadow: 0 0 10px #ffc700;
+}
+
+/* ⏳ 3. Effect หลอดเวลากระพริบถี่ๆ (ช่วงวิกฤต) */
+@keyframes pulse-danger-bar {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+.pulse-danger-bar {
+    animation: pulse-danger-bar 0.5s linear infinite;
+    background-color: #f1416c !important; /* บังคับสีแดง */
+}
+
+/* 🚨 4. Effect จอแดงวาบ (Flash Screen) */
+@keyframes flash-red {
+    0%, 100% { background-color: transparent; }
+    50% { background-color: rgba(241, 65, 108, 0.4); }
+}
+.screen-flash-red {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; /* คลิกทะลุได้ */
+    z-index: 9998;
+    animation: flash-red 0.6s ease-out;
+}
+
+/* 💣 5. Overlay รูประเบิดเต็มจอ */
+#explosionOverlay {
+    position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    /* ใช้ GIF ระเบิดจาก Giphy หรือหาไฟล์มาใส่เองใน /assets/images/ */
+    background: rgba(0,0,0,0.7) url('https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaWFhNnZ4Y3F4Y3F4Y3F4Y3F4Y3F4Y3F4Y3F4Y3F4Y3F4eCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/26tP3M3i03hoI566s/giphy.gif') no-repeat center center;
+    background-size: contain;
+    z-index: 9999;
+    display: none; /* ซ่อนไว้ก่อน */
+    justify-content: center;
+    align-items: flex-end;
+    padding-bottom: 100px;
+}
+#explosionOverlay.show { display: flex; }
+#explosionOverlay .boom-text {
+    font-size: 5rem;
+    font-weight: 900;
+    color: #f1416c;
+    text-shadow: 3px 3px 0 #000, -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000;
+    animation: shake-hard 1s infinite;
+}
+
+.modal-content.bg-dark {
+    color: #ffffff !important;
+}
+
+/* แก้หัวข้อ Modal ให้ขาว */
+.modal-content.bg-dark .modal-title {
+    color: #ffffff !important;
+}
+
+/* แก้พวกตัวหนังสือสีเทา (text-muted) ให้สว่างขึ้นให้อ่านออก */
+.modal-content.bg-dark .text-muted {
+    color: #b5b5c3 !important; /* สีเทาสว่าง */
+}
+
+/* แก้ปุ่มปิด (X) ให้เป็นสีขาว */
+.modal-content.bg-dark .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+
+/* Layer สำหรับรูปภาพพื้นหลังการ์ด */
+.card-bg-img {
+    transition: all 0.2s;
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%;
+    height: auto;
+    max-height: 70%;
+    object-fit: contain;
+    opacity: 1; /* รูปชัดๆ */
+}
+
+/* ขยับพวกตัวหนังสือให้ลอยเหนือรูป */
+.card-type, .card-name, .card-icon {
+    font-family: 'Kanit', sans-serif;
+    font-weight: 800; /* หนาพิเศษ */
+    color: #fff !important; /* บังคับขาว */
+    text-transform: uppercase;
+    text-align: center;
+    line-height: 1;
+    z-index: 10;
+    position: relative;
+
+    /* 🔥 ทีเด็ด: ขอบตัวหนังสือดำหนา (Text Stroke) อ่านออกแน่นอน 100% */
+    text-shadow:
+            2px 0 0 #000, -2px 0 0 #000,
+            0 2px 0 #000, 0 -2px 0 #000,
+            1px 1px 0 #000, -1px -1px 0 #000,
+            1px -1px 0 #000, -1px 1px 0 #000,
+            3px 3px 5px rgba(0,0,0,0.8);
+}
+
+.playing-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 40%; /* สูงขึ้นมา 40% ของการ์ด */
+    background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%);
+    z-index: 1; /* อยู่หลังตัวหนังสือ แต่อยู่หน้ารูป */
+    border-bottom-left-radius: 8px; /* ให้โค้งตามการ์ด */
+    border-bottom-right-radius: 8px;
+    pointer-events: none; /* ให้คลิกทะลุได้ */
+}
+
+#discardTopCard .playing-card {
+    /* ทำให้การ์ดหมุนนิดๆ แบบสุ่ม (ใช้ JS สุ่มจะดีกว่า แต่อันนี้ Fix ไว้เท่ๆ ก่อน) */
+    transform: rotate(3deg) !important;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.5) !important;
+}
+
+#discardPileBox:hover .playing-card {
+    transform: rotate(0deg) scale(1.05) !important; /* พอเอาเมาส์ชี้ ให้ตั้งตรงและขยาย */
+    z-index: 10;
+}
