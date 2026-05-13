@@ -15,7 +15,7 @@
         <h1 class="display-1">👑</h1>
         <h2 class="text-warning fw-bold mb-4" id="winnerText">WINNER!</h2>
         <button class="btn btn-lg btn-success me-2" onclick="resetGame()">เล่นใหม่อีกครั้ง</button>
-        <button class="btn btn-lg btn-outline-light" onclick="goToLobby()">กลับ Lobby</button>
+        <button class="btn btn-lg btn-light" onclick="goToLobby()">กลับ Lobby</button>
     </div>
 
     <div id="explosionOverlay">
@@ -31,7 +31,7 @@
             <button onclick="connectAndJoin()" class="btn btn-primary btn-lg w-100 mb-2">
                 <i class="fas fa-play me-2"></i> เข้าห้องเกม
             </button>
-            <button type="button" class="btn btn-outline-secondary w-100 mb-2" onclick="showHowToPlay()">
+            <button type="button" class="btn btn-secondary w-100 mb-2" onclick="showHowToPlay()">
                 <i class="fas fa-book me-2"></i> วิธีเล่น
             </button>
             <div id="connectionStatus" class="text-center mt-2 text-muted small">Ready to connect...</div>
@@ -65,7 +65,7 @@
             <div class="card bg-dark border-secondary p-3">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="text-white mb-0"><i class="fas fa-list me-2"></i>ห้องที่เปิดอยู่</h5>
-                    <button onclick="refreshRooms()" class="btn btn-sm btn-outline-secondary">
+                    <button onclick="refreshRooms()" class="btn btn-sm btn-secondary">
                         <i class="fas fa-sync"></i> รีเฟรช
                     </button>
                 </div>
@@ -89,10 +89,10 @@
             <div class="opponent-area flex-grow-1" id="opponentsBox">
             </div>
             <div>
-                <button onclick="leaveRoom()" class="btn btn-sm btn-outline-danger ms-2" title="ออกห้อง">
+                <button onclick="leaveRoom()" class="btn btn-sm btn-danger ms-2" title="ออกห้อง">
                     <i class="fas fa-sign-out-alt"></i>
                 </button>
-                <button class="btn btn-sm btn-outline-info ms-2" onclick="showHowToPlay()" title="วิธีเล่น">
+                <button class="btn btn-sm btn-info ms-2" onclick="showHowToPlay()" title="วิธีเล่น">
                     <i class="fas fa-question-circle"></i>
                 </button>
                 <button id="readyBtn" class="btn btn-sm btn-secondary ms-2" style="display:none;" onclick="toggleReady()">
@@ -728,7 +728,7 @@
                         actionDiv.className = 'd-flex justify-content-between mt-2 pt-3 border-top border-secondary';
 
                         let resetBtn = document.createElement('button');
-                        resetBtn.className = 'btn btn-outline-secondary btn-sm';
+                        resetBtn.className = 'btn btn-secondary btn-sm';
                         resetBtn.innerText = 'ล้างค่า';
                         resetBtn.onclick = () => {
                             source = [...cardNames];
