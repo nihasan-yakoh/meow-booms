@@ -89,6 +89,9 @@
             <div class="opponent-area flex-grow-1" id="opponentsBox">
             </div>
             <div>
+                <button onclick="leaveRoom()" class="btn btn-sm btn-outline-danger ms-2" title="ออกห้อง">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
                 <button class="btn btn-sm btn-outline-info ms-2" onclick="showHowToPlay()" title="วิธีเล่น">
                     <i class="fas fa-question-circle"></i>
                 </button>
@@ -362,12 +365,12 @@
                     }
 
                     if (body.roomCreated && body.targetPlayer === myName) {
-                        enterGame(body.roomCreated);
+                        enterGame(body.roomCreated, body.initialState);
                         return;
                     }
 
                     if (body.roomJoined && body.targetPlayer === myName) {
-                        enterGame(body.roomJoined);
+                        enterGame(body.roomJoined, body.initialState);
                         return;
                     }
 
@@ -410,7 +413,7 @@
             stompClient.send('/app/join-room', {}, JSON.stringify(req));
         }
 
-        function enterGame(roomId) {
+        function enterGame(roomId, initialState) {
             currentRoomId = roomId;
 
             if (gameSubscription) {
@@ -426,6 +429,18 @@
 
             document.getElementById('lobbyScreen').style.display = 'none';
             document.getElementById('gameScreen').style.display = 'flex';
+
+            if (initialState && initialState.allPlayers) {
+                if (initialState.cardList) cards = initialState.cardList;
+                window.lastGameState = initialState;
+                updateUI(initialState);
+            }
+        }
+
+        function leaveRoom() {
+            if (!currentRoomId) { goToLobby(); return; }
+            stompClient.send('/app/leave-room', {}, JSON.stringify({ roomId: currentRoomId, playerName: myName }));
+            goToLobby();
         }
 
         function renderRoomList(rooms) {

@@ -64,6 +64,16 @@ public class RoomManager {
                 .collect(Collectors.toList());
     }
 
+    public void leaveRoom(String roomId, String playerName) {
+        GameService game = getRoom(roomId);
+        game.leaveGame(playerName);
+        if (game.isEmpty()) {
+            rooms.remove(roomId);
+            log.info("Room {} removed (empty after leave)", roomId);
+        }
+        broadcastRoomList();
+    }
+
     public void broadcastRoomList() {
         messagingTemplate.convertAndSend("/topic/lobby", getRoomList());
     }

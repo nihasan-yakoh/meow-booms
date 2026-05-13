@@ -1,6 +1,7 @@
 package com.game.meowbooms.controller;
 
 import com.game.meowbooms.model.*;
+import com.game.meowbooms.service.GameService;
 import com.game.meowbooms.service.RoomManager;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ public class GameController {
             Map<String, Object> response = new HashMap<>();
             response.put("roomCreated", roomId);
             response.put("targetPlayer", request.getPlayerName());
+            response.put("initialState", roomManager.getRoom(roomId).getGameState());
             messagingTemplate.convertAndSend("/topic/lobby", response);
         } catch (Exception e) {
             sendLobbyError(request.getPlayerName(), e.getMessage());
@@ -40,6 +42,7 @@ public class GameController {
             Map<String, Object> response = new HashMap<>();
             response.put("roomJoined", request.getRoomId());
             response.put("targetPlayer", request.getName());
+            response.put("initialState", roomManager.getRoom(request.getRoomId()).getGameState());
             messagingTemplate.convertAndSend("/topic/lobby", response);
         } catch (Exception e) {
             sendLobbyError(request.getName(), e.getMessage());
@@ -137,6 +140,23 @@ public class GameController {
             roomManager.getRoom(request.getRoomId()).toggleReady(request.getPlayerName());
         } catch (Exception e) {
             sendError(request.getRoomId(), request.getPlayerName(), e.getMessage());
+        }
+    }
+
+    @MessageMapping("/leave-room")
+    public void leaveRoom(RoomActionRequest request) {
+        try {
+            roomManager.leaveRoom(request.getRoomId(), request.getPlayerName());
+        } catch (Exception ignored) {
+        }
+    }
+
+    @MessageMapping("/request-state")
+    public void requestState(RoomActionRequest request) {
+        try {
+            GameService game = roomManager.getRoom(request.getRoomId());
+            messagingTemplate.convertAndSend("/topic/game/" + request.getRoomId(), game.getGameState());
+        } catch (Exception ignored) {
         }
     }
 

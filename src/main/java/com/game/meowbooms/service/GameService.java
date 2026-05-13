@@ -1382,6 +1382,37 @@ public class GameService {
         }
     }
 
+    public void leaveGame(String playerName) {
+        Player p = getPlayerByName(playerName);
+        if (p == null) return;
+
+        sessionMap.values().removeIf(val -> val.equals(playerName));
+
+        if (!isGameStarted) {
+            players.remove(p);
+            if (disconnectTimers.containsKey(playerName)) {
+                disconnectTimers.get(playerName).cancel(false);
+                disconnectTimers.remove(playerName);
+            }
+            validateHost();
+            logMsg("🚪 " + playerName + " ออกจากห้อง");
+            messagingTemplate.convertAndSend(roomTopic, getGameState());
+            return;
+        }
+
+        p.setOnline(false);
+        if (p.isHost()) {
+            p.setHost(false);
+            validateHost();
+        }
+        logMsg("🚪 " + playerName + " ออกจากเกม");
+        messagingTemplate.convertAndSend(roomTopic, getGameState());
+    }
+
+    public void broadcastCurrentState() {
+        messagingTemplate.convertAndSend(roomTopic, getGameState());
+    }
+
     public boolean isEmpty() {
         return players.stream().noneMatch(Player::isOnline);
     }
