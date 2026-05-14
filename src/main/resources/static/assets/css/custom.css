@@ -713,6 +713,32 @@ body {
 }
 .chip-kick:hover { opacity: 1; }
 
+/* Chip ที่ host กดเตะได้ */
+.chip-kickable {
+    cursor: pointer;
+}
+/* desktop: แสดง border แดงจาง ๆ เมื่อ hover เพื่อ hint ว่ากดได้ */
+@media (hover: hover) {
+    .chip-kickable:hover {
+        border-color: rgba(241, 65, 108, 0.6) !important;
+        box-shadow: 0 0 0 2px rgba(241, 65, 108, 0.25);
+    }
+}
+/* mobile: ซ่อนปุ่ม ✕ (ไม่จำเป็นเพราะแตะ chip ได้เลย) */
+@media (hover: none) {
+    .chip-kick { display: none; }
+    /* แสดง label "👢" มุมบนขวาเพื่อบอกว่าแตะเพื่อเตะได้ */
+    .chip-kickable::after {
+        content: '👢';
+        position: absolute;
+        top: -6px;
+        right: -4px;
+        font-size: 0.7rem;
+        line-height: 1;
+        pointer-events: none;
+    }
+}
+
 /* Bot difficulty badge */
 .badge-bot {
     background: #1a2540;

@@ -1195,7 +1195,7 @@
 
                 // crown + kick
                 let crownHtml = p.host ? '<span class="chip-crown">👑</span>' : '';
-                // Host can kick anyone who isn't themselves (including bots)
+                // ปุ่ม ✕ สำหรับ desktop (hover เห็น)
                 let kickHtml = (isImHost && !isMe && !isGameStarted)
                     ? `<button class="chip-kick" onclick="event.stopPropagation();kickPlayer('${p.name}')" title="เตะ">✕</button>`
                     : '';
@@ -1206,6 +1206,13 @@
                     ${statusBadge}${cardCount}${kickHtml}
                 `;
                 div.style.position = 'relative';
+
+                // บน mobile: แตะ chip ทั้งใบเพื่อเตะ (host + pre-game + ไม่ใช่ตัวเอง)
+                if (isImHost && !isMe && !isGameStarted) {
+                    div.classList.add('chip-kickable');
+                    div.addEventListener('click', () => kickPlayer(p.name));
+                }
+
                 box.appendChild(div);
             });
         }
