@@ -408,7 +408,7 @@ public class GameService {
         return pendingTask != null && !pendingTask.isDone();
     }
 
-    public void drawCard(String playerName) {
+    public synchronized void drawCard(String playerName) {
         // 1. เช็คว่าเกมเริ่มหรือยัง
         if (!isGameStarted) throw new RuntimeException("เกมยังไม่เริ่มใจเย็นๆ ไอสอง~");
 
@@ -501,7 +501,7 @@ public class GameService {
         }
     }
 
-    public void placeBomb(String playerName, int targetIndex) {
+    public synchronized void placeBomb(String playerName, int targetIndex) {
         if (!playerName.equals(pendingActionPlayer) || !"PLACE_BOMB".equals(pendingActionType)) {
             throw new RuntimeException("ไม่ได้อยู่ในขั้นตอนวางระเบิด");
         }
@@ -520,7 +520,8 @@ public class GameService {
 
         if (turnsLeft > 0) {
             logMsg("😅 " + playerName + " รอดตาย! แต่ยังเหลือต้องเล่นอีก " + turnsLeft + " ตา");
-            // ไม่เรียก nextTurn() ให้เล่นต่อ
+            // 🤖 ถ้าเป็นบอทให้เล่นต่อ (nextTurn ไม่ถูกเรียก)
+            triggerBotTurnIfNeeded(playerName);
         } else {
             nextTurn(); // หมดโควต้าแล้ว เปลี่ยนคน
         }
@@ -595,7 +596,7 @@ public class GameService {
         }
     }
 
-    public void playCard(String playerName, List<Integer> cardIndices, String targetPlayerName, String requestedCardType) {
+    public synchronized void playCard(String playerName, List<Integer> cardIndices, String targetPlayerName, String requestedCardType) {
         if (!isGameStarted) throw new RuntimeException("เกมยังไม่เริ่มใจเย็นๆ ไอสอง~");
 
         Player requester = getPlayerByName(playerName);
@@ -1011,7 +1012,7 @@ public class GameService {
         gameLogs.add(0, "SECRET|" + uuid + "|" + targetPlayer + "|" + new Gson().toJson(cards));
     }
 
-    public void giveCard(String victimName, int cardIndex) {
+    public synchronized void giveCard(String victimName, int cardIndex) {
         if (pendingActionPlayer == null || !pendingActionPlayer.equals(victimName)) {
             throw new RuntimeException("คุณไม่ได้ถูกขอการ์ด หรือไม่ได้อยู่ในสถานะส่งการ์ด");
         }
@@ -1135,7 +1136,7 @@ public class GameService {
         discardPile.addAll(cards);
     }
 
-    public void pickCardFromDiscard(String playerName, int discardIndex) {
+    public synchronized void pickCardFromDiscard(String playerName, int discardIndex) {
         if (!pendingActionType.equals("PICK_DISCARD") || !pendingActionPlayer.equals(playerName)) {
             throw new RuntimeException("ไม่ได้อยู่ในสถานะเลือกกองทิ้ง!");
         }
@@ -1200,7 +1201,7 @@ public class GameService {
         scheduleBotNopeEvaluations();
     }
 
-    private void runPendingAction() {
+    private synchronized void runPendingAction() {
         if (!isActionNoped) {
             logMsg("✅ ไม่มีใครค้าน/ค้านไม่สำเร็จ! " + Card.of(pendingActionCardType).getName() + " ทำงาน!");
 
@@ -1534,7 +1535,7 @@ public class GameService {
     }
 
     /** Bot เล่น card หรือ draw ตาม BotLogic */
-    private void executeBotTurn(String expectedPlayerName) {
+    private synchronized void executeBotTurn(String expectedPlayerName) {
         // ปลด guard ก่อนทำงาน เพื่อให้ trigger ครั้งถัดไปเข้ามาได้
         botTurnScheduled.compareAndSet(expectedPlayerName, null);
 
@@ -1559,8 +1560,10 @@ public class GameService {
             }
         } catch (Exception e) {
             log.warn("🤖 Bot turn error [{}]: {}", bot.getName(), e.getMessage());
-            // Fallback: จั่วการ์ด
-            try { drawCard(bot.getName()); } catch (Exception ignored) {}
+            // Fallback: จั่วการ์ด (เฉพาะเมื่อไม่มี interactive action ค้างอยู่)
+            if (pendingActionType == null) {
+                try { drawCard(bot.getName()); } catch (Exception ignored) {}
+            }
         }
     }
 
@@ -1571,7 +1574,7 @@ public class GameService {
         scheduler.schedule(() -> executeBotInteractiveAction(botName, actionType), delayMs, TimeUnit.MILLISECONDS);
     }
 
-    private void executeBotInteractiveAction(String botName, String actionType) {
+    private synchronized void executeBotInteractiveAction(String botName, String actionType) {
         // ตรวจว่ายังเป็น action นี้อยู่
         if (!actionType.equals(pendingActionType) || !botName.equals(pendingActionPlayer)) return;
 
@@ -1585,8 +1588,17 @@ public class GameService {
                     placeBomb(bot.getName(), pos);
                 }
                 case "GIVE_CARD" -> {
-                    int cardIdx = BotLogic.decideGiveCard(bot);
-                    giveCard(bot.getName(), cardIdx);
+                    if (bot.getHand().isEmpty()) {
+                        // ไม่มีการ์ดให้ส่ง → ยุติ action ป้องกันเกมค้าง
+                        logMsg("🤷 " + botName + " ไม่มีการ์ดในมือ ข้ามการส่ง");
+                        pendingActionPlayer = null;
+                        pendingActionType = null;
+                        triggerBotTurnIfNeeded(currentPlayerName);
+                        messagingTemplate.convertAndSend(roomTopic, getGameState());
+                    } else {
+                        int cardIdx = BotLogic.decideGiveCard(bot);
+                        giveCard(bot.getName(), cardIdx);
+                    }
                 }
                 case "ALTER_FUTURE" -> {
                     List<String> order = BotLogic.decideAlterFuture(bot, new ArrayList<>(tempFutureCards));
@@ -1633,25 +1645,27 @@ public class GameService {
             String targetSnapshot = pendingActionTargetName;
 
             scheduler.schedule(() -> {
-                // ถ้าช่วงหน้าต่างปิดแล้วหรือสถานะเปลี่ยนไปแล้ว ให้ข้ามไป
-                if (pendingTask == null || pendingTask.isDone()) return;
-                if (srcSnapshot != pendingActionSourcePlayer) return;
+                synchronized (GameService.this) {
+                    // ถ้าช่วงหน้าต่างปิดแล้วหรือสถานะเปลี่ยนไปแล้ว ให้ข้ามไป
+                    if (pendingTask == null || pendingTask.isDone()) return;
+                    if (srcSnapshot != pendingActionSourcePlayer) return;
 
-                boolean shouldNope = BotLogic.decideNope(
-                        bot, srcSnapshot, typeSnapshot, targetSnapshot, players, isActionNoped);
+                    boolean shouldNope = BotLogic.decideNope(
+                            bot, srcSnapshot, typeSnapshot, targetSnapshot, players, isActionNoped);
 
-                if (shouldNope) {
-                    // หา index การ์ด NOPE ของบอท
-                    List<Card> hand = bot.getHand();
-                    for (int i = 0; i < hand.size(); i++) {
-                        if (hand.get(i).getType() == CardType.NOPE) {
-                            try {
-                                logMsg("🤖 " + bot.getName() + " ใช้ NOPE!");
-                                playCard(bot.getName(), List.of(i), null, null);
-                            } catch (Exception e) {
-                                log.warn("🤖 Bot NOPE error [{}]: {}", bot.getName(), e.getMessage());
+                    if (shouldNope) {
+                        // หา index การ์ด NOPE ของบอท
+                        List<Card> hand = bot.getHand();
+                        for (int i = 0; i < hand.size(); i++) {
+                            if (hand.get(i).getType() == CardType.NOPE) {
+                                try {
+                                    logMsg("🤖 " + bot.getName() + " ใช้ NOPE!");
+                                    playCard(bot.getName(), List.of(i), null, null);
+                                } catch (Exception e) {
+                                    log.warn("🤖 Bot NOPE error [{}]: {}", bot.getName(), e.getMessage());
+                                }
+                                break;
                             }
-                            break;
                         }
                     }
                 }
