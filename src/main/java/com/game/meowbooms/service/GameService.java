@@ -435,6 +435,8 @@ public class GameService {
                 nextTurn();
             } else {
                 logMsg("⏳ " + player.getName() + " ยังเหลือต้องเล่นอีก " + turnsLeft + " ตา");
+                // 🤖 ยังเป็นเทิร์นของบอทอยู่ (โดน Attack) → ต้องเล่นต่อ
+                triggerBotTurnIfNeeded(playerName);
             }
         }
 
@@ -1026,6 +1028,8 @@ public class GameService {
 
         // 4. เคลียร์สถานะ
         cleanupState();
+        // 🤖 FAVOR จบแล้ว แต่เทิร์นยังของผู้ใช้ FAVOR อยู่ → ต้องเล่นต่อ
+        triggerBotTurnIfNeeded(currentPlayerName);
         messagingTemplate.convertAndSend(roomTopic, getGameState());
     }
 
@@ -1083,11 +1087,11 @@ public class GameService {
             player.getHand().add(bottomCard);
             sortHand(player.getHand());
             logMsg(player.getName() + " จั่วใต้กองแล้วรอด");
-            //nextTurn(); // จบเทิร์นปกติ
             turnsLeft--;
             if (turnsLeft > 0) {
                 logMsg("😅 " + player.getName() + " รอดตาย! แต่ยังเหลือต้องเล่นอีก " + turnsLeft + " ตา");
-                // ไม่เรียก nextTurn() ให้เล่นต่อ
+                // 🤖 ยังเป็นเทิร์นของบอทอยู่ → ต้องเล่นต่อ
+                triggerBotTurnIfNeeded(player.getName());
             } else {
                 nextTurn(); // หมดโควต้าแล้ว เปลี่ยนคน
             }
@@ -1119,6 +1123,8 @@ public class GameService {
         cleanupState();
         logMsg("🔮 " + playerName + " เปลี่ยนแปลงอนาคตเรียบร้อย!");
         messagingTemplate.convertAndSend(roomTopic, getGameState());
+        // 🤖 ALTER_FUTURE จบแล้ว เทิร์นยังของบอทอยู่ → ต้องเล่นต่อ
+        triggerBotTurnIfNeeded(currentPlayerName);
     }
 
     private void discardCards(List<Card> cards) {
@@ -1143,6 +1149,8 @@ public class GameService {
         cleanupState();
         logMsg("🧟 " + playerName + " ขุด " + picked.getName() + " ขึ้นมาจากหลุม!");
         messagingTemplate.convertAndSend(roomTopic, getGameState());
+        // 🤖 PICK_DISCARD จบแล้ว เทิร์นยังของบอทอยู่ → ต้องเล่นต่อ
+        triggerBotTurnIfNeeded(currentPlayerName);
     }
 
     private boolean isNopeable(CardType type) {
@@ -1243,6 +1251,11 @@ public class GameService {
         }
 
         messagingTemplate.convertAndSend(roomTopic, getGameState());
+
+        // 🤖 Re-trigger bot ถ้าเทิร์นยังเป็นของ bot เดิมอยู่
+        // (เช่น SKIP ที่ยังเหลือ turnsLeft, หรือ action โดน NOPE — เทิร์นยังของคนเดิม)
+        // nextTurn() จะ trigger เองถ้าเทิร์นเปลี่ยนไปแล้ว guard ใน executeBotTurn ป้องกัน double-fire
+        triggerBotTurnIfNeeded(currentPlayerName);
     }
 
     private void handleNopeCard(Player player) {
