@@ -181,7 +181,10 @@ public class GameController {
     private void sendError(String roomId, String targetName, String errorMessage) {
         Map<String, Object> errorPayload = new HashMap<>();
         errorPayload.put("content", "Error: " + errorMessage);
-        errorPayload.put("errorTarget", targetName);
+        try {
+            String token = roomManager.getRoom(roomId).getPlayerToken(targetName);
+            if (token != null) errorPayload.put("errorToken", token);
+        } catch (Exception ignored) {}
         messagingTemplate.convertAndSend("/topic/game/" + roomId, errorPayload);
     }
 

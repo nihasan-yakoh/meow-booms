@@ -10,6 +10,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import static java.time.LocalTime.now;
@@ -31,6 +32,9 @@ public class GameService {
 
     private ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private ScheduledFuture<?> pendingTask; // ตัวเก็บ Task ที่กำลังนับถอยหลัง
+
+    /** Guard กันบอท schedule ซ้ำ: เก็บชื่อผู้เล่นที่ถูก schedule ไว้แล้ว */
+    private final AtomicReference<String> botTurnScheduled = new AtomicReference<>(null);
 
     private List<Player> players = new ArrayList<>();
     private Stack<Card> deck = new Stack<>();
@@ -1396,6 +1400,11 @@ public class GameService {
         return players.stream().filter(p -> p.getName().equals(name)).findFirst().orElse(null);
     }
 
+    public String getPlayerToken(String playerName) {
+        Player p = getPlayerByName(playerName);
+        return p != null ? p.getToken() : null;
+    }
+
     private void validateHost() {
         // 1. เช็คว่ามีใครเป็น Host อยู่ไหม (รวมคน Offline ด้วยก็ได้ กันเหนียว)
         boolean hasHost = players.stream().anyMatch(p -> p.isHost() && !p.isSpectator() && p.isOnline());
@@ -1512,12 +1521,23 @@ public class GameService {
         Player p = getPlayerByName(expectedPlayerName);
         if (p == null || !p.isBot() || !isGameStarted) return;
 
+        // ป้องกัน double-schedule: ถ้ามี task ของผู้เล่นคนนี้อยู่แล้วให้ข้ามไป
+        if (!botTurnScheduled.compareAndSet(null, expectedPlayerName)) {
+            // มีอะไรอยู่แล้ว — ถ้าเป็นคนเดิมก็ไม่ต้องทำอะไร
+            if (expectedPlayerName.equals(botTurnScheduled.get())) return;
+            // คนละคน (เทิร์นเปลี่ยนแล้ว) — อัพเดตให้ถูก
+            botTurnScheduled.set(expectedPlayerName);
+        }
+
         int delayMs = 1500 + new Random().nextInt(1000); // 1.5–2.5 วินาที
         scheduler.schedule(() -> executeBotTurn(expectedPlayerName), delayMs, TimeUnit.MILLISECONDS);
     }
 
     /** Bot เล่น card หรือ draw ตาม BotLogic */
     private void executeBotTurn(String expectedPlayerName) {
+        // ปลด guard ก่อนทำงาน เพื่อให้ trigger ครั้งถัดไปเข้ามาได้
+        botTurnScheduled.compareAndSet(expectedPlayerName, null);
+
         // ตรวจสอบว่ายังเป็นตาของบอทนี้อยู่ไหม
         if (!expectedPlayerName.equals(currentPlayerName)) return;
         if (!isGameStarted) return;
