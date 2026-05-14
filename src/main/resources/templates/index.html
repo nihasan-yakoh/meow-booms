@@ -390,17 +390,17 @@
                         return;
                     }
 
-                    if (body.roomCreated && body.targetPlayer === myName) {
+                    if (body.roomCreated && body.targetToken === userToken) {
                         enterGame(body.roomCreated, body.initialState);
                         return;
                     }
 
-                    if (body.roomJoined && body.targetPlayer === myName) {
+                    if (body.roomJoined && body.targetToken === userToken) {
                         enterGame(body.roomJoined, body.initialState);
                         return;
                     }
 
-                    if (body.content && body.content.startsWith("Error") && body.errorTarget === myName) {
+                    if (body.content && body.content.startsWith("Error") && body.errorToken === userToken) {
                         alert(body.content.replace("Error: ", ""));
                     }
                 });
@@ -1854,8 +1854,8 @@
         }
 
         function handleError(message) {
-            // เช็คว่าเป็น Error ของเราไหม
-            if (message.errorTarget && message.errorTarget !== myName) return;
+            // เช็คว่าเป็น Error ของเราไหม (ใช้ token แทน name กันชื่อซ้ำ)
+            if (message.errorToken && message.errorToken !== userToken) return;
 
             // 🔥 แก้บัค: ถ้า Alert อยู่แล้ว อย่าเด้งซ้ำ
             if (isErrorAlertShowing) return;

@@ -27,11 +27,11 @@ public class GameController {
             String roomId = roomManager.createRoom(request.getRoomName(), request.getPlayerName(), request.getToken(), sessionId);
             Map<String, Object> response = new HashMap<>();
             response.put("roomCreated", roomId);
-            response.put("targetPlayer", request.getPlayerName());
+            response.put("targetToken", request.getToken()); // route by token — unique per browser
             response.put("initialState", roomManager.getRoom(roomId).getGameState());
             messagingTemplate.convertAndSend("/topic/lobby", response);
         } catch (Exception e) {
-            sendLobbyError(request.getPlayerName(), e.getMessage());
+            sendLobbyError(request.getToken(), e.getMessage());
         }
     }
 
@@ -41,11 +41,11 @@ public class GameController {
             roomManager.joinRoom(request.getRoomId(), sessionId, request.getName(), request.getToken());
             Map<String, Object> response = new HashMap<>();
             response.put("roomJoined", request.getRoomId());
-            response.put("targetPlayer", request.getName());
+            response.put("targetToken", request.getToken()); // route by token
             response.put("initialState", roomManager.getRoom(request.getRoomId()).getGameState());
             messagingTemplate.convertAndSend("/topic/lobby", response);
         } catch (Exception e) {
-            sendLobbyError(request.getName(), e.getMessage());
+            sendLobbyError(request.getToken(), e.getMessage());
         }
     }
 
@@ -185,10 +185,10 @@ public class GameController {
         messagingTemplate.convertAndSend("/topic/game/" + roomId, errorPayload);
     }
 
-    private void sendLobbyError(String targetName, String errorMessage) {
+    private void sendLobbyError(String targetToken, String errorMessage) {
         Map<String, Object> errorPayload = new HashMap<>();
         errorPayload.put("content", "Error: " + errorMessage);
-        errorPayload.put("errorTarget", targetName);
+        errorPayload.put("errorToken", targetToken); // route by token
         messagingTemplate.convertAndSend("/topic/lobby", errorPayload);
     }
 }
