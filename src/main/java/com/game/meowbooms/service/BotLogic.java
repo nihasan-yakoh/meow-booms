@@ -134,53 +134,102 @@ public class BotLogic {
         return BotAction.draw();
     }
 
-    // ───────────────────────── Hard (Tiger) ─────────────────────────
+    // ───────────────────────── Hard (Tiger) — Human AI ─────────────────────────
 
     /**
-     * Sees the actual deck contents (cheaty).
-     * Optimal but has a ~15 % overconfidence flaw to keep it beatable.
+     * Plays like an experienced human:
+     *  • Evaluates actual bomb position (sees the deck)
+     *  • Uses UNDER when top is dangerous but bottom is safe
+     *  • Targets the most threatening opponent
+     *  • Protects DEFUSE aggressively
+     *  • Makes strategic plays even in "safe" turns
      */
     private static BotAction decideHard(Player bot, List<Player> players, Stack<Card> deck, int turnsLeft) {
         List<Card> hand = bot.getHand();
+        int deckSize = deck.size();
 
-        // Under attack → always try to escape
+        if (deckSize == 0) return BotAction.draw();
+
+        // ── Situational awareness ──
+        int bombPos     = nearestBombFromTop(deck);   // 0 = top, -1 = no bomb
+        boolean noBomb  = bombPos < 0;
+        boolean bombTop1 = bombPos == 0;
+        boolean bombTop3 = bombPos >= 0 && bombPos < 3;
+        boolean bombTop6 = bombPos >= 0 && bombPos < 6;
+        boolean bottomSafe = deck.get(0).getType() != CardType.BOOMS; // index 0 = bottom of Stack
+
+        // ── UNDER ATTACK: must escape or redirect ──
         if (turnsLeft > 1) {
-            BotAction escape = tryEscape(hand, bot, players);
-            if (escape != null) return escape;
-        }
-
-        // Check bomb proximity (hard bot sees the full deck)
-        boolean bombInTop3 = bombNearTop(deck, 3);
-        boolean bombInTop6 = bombNearTop(deck, 6);
-
-        if (bombInTop3) {
-            // Priority: CTF → SHUFFLE → SKIP → ATTACK_TO/ATTACK (85%) → brave draw (15%)
-            int idx = find(hand, CardType.CHANGE_THE_FUTURE);
+            // SKIP: cleanest — just burns one of our forced draws
+            int idx = find(hand, CardType.SKIP);
             if (idx >= 0) return BotAction.play(List.of(idx));
 
-            if ((idx = find(hand, CardType.SHUFFLE)) >= 0) return BotAction.play(List.of(idx));
-            if ((idx = find(hand, CardType.SKIP)) >= 0)    return BotAction.play(List.of(idx));
-
-            if (RNG.nextInt(100) < 85) {   // 15 % overconfidence flaw
-                idx = find(hand, CardType.ATTACK_TO);
-                if (idx >= 0) {
-                    String target = pickWeakestTarget(bot, players);
-                    if (target != null) return BotAction.play(List.of(idx), target);
-                }
-                if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
+            // ATTACK_TO: redirect all remaining turns to the biggest threat
+            idx = find(hand, CardType.ATTACK_TO);
+            if (idx >= 0) {
+                String target = pickThreat(bot, players);
+                if (target != null) return BotAction.play(List.of(idx), target);
             }
+            // ATTACK: redirect to next player
+            if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
+
+            // Last resort: if top is lethal but bottom is safe, UNDER
+            if (bombTop1 && bottomSafe) {
+                if ((idx = find(hand, CardType.UNDER)) >= 0) return BotAction.play(List.of(idx));
+            }
+            // Nothing helps — draw and hope for DEFUSE
+            return BotAction.draw();
         }
 
-        if (bombInTop6) {
-            // Scout and dodge
+        // ── IMMEDIATE DANGER: bomb sitting right on top ──
+        if (bombTop1) {
             int idx;
-            if ((idx = find(hand, CardType.SEE_THE_FUTURE)) >= 0)    return BotAction.play(List.of(idx));
-            if ((idx = find(hand, CardType.CHANGE_THE_FUTURE)) >= 0)  return BotAction.play(List.of(idx));
-            // Pass the danger (70%)
-            if (RNG.nextInt(100) < 70) {
+            // Best: CTF — bury the bomb away from top
+            if ((idx = find(hand, CardType.CHANGE_THE_FUTURE)) >= 0) return BotAction.play(List.of(idx));
+            // Good: SHUFFLE — randomise, bomb might land anywhere
+            if ((idx = find(hand, CardType.SHUFFLE)) >= 0) return BotAction.play(List.of(idx));
+            // SKIP — avoid drawing this turn
+            if ((idx = find(hand, CardType.SKIP)) >= 0) return BotAction.play(List.of(idx));
+            // Pass the problem: ATTACK_TO → richest threat, else ATTACK
+            idx = find(hand, CardType.ATTACK_TO);
+            if (idx >= 0) {
+                String target = pickThreat(bot, players);
+                if (target != null) return BotAction.play(List.of(idx), target);
+            }
+            if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
+            // Clever escape: UNDER draws from bottom — safe if bottom isn't a bomb
+            if (bottomSafe && (idx = find(hand, CardType.UNDER)) >= 0) return BotAction.play(List.of(idx));
+            // Nothing left — draw and cross fingers
+            return BotAction.draw();
+        }
+
+        // ── HIGH DANGER: bomb in top 3 ──
+        if (bombTop3) {
+            int idx;
+            if ((idx = find(hand, CardType.CHANGE_THE_FUTURE)) >= 0) return BotAction.play(List.of(idx));
+            if ((idx = find(hand, CardType.SHUFFLE)) >= 0)            return BotAction.play(List.of(idx));
+            if ((idx = find(hand, CardType.SKIP)) >= 0)               return BotAction.play(List.of(idx));
+            idx = find(hand, CardType.ATTACK_TO);
+            if (idx >= 0) {
+                String target = pickThreat(bot, players);
+                if (target != null) return BotAction.play(List.of(idx), target);
+            }
+            if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
+            // UNDER: draw from bottom as safer alternative if bottom is clean
+            if (bottomSafe && (idx = find(hand, CardType.UNDER)) >= 0) return BotAction.play(List.of(idx));
+        }
+
+        // ── MEDIUM DANGER: bomb in top 4–6 ──
+        if (bombTop6) {
+            int idx;
+            // Always scout first — knowing exact position is critical
+            if ((idx = find(hand, CardType.SEE_THE_FUTURE)) >= 0)   return BotAction.play(List.of(idx));
+            if ((idx = find(hand, CardType.CHANGE_THE_FUTURE)) >= 0) return BotAction.play(List.of(idx));
+            // Pass the danger (75% of the time — don't always panic)
+            if (RNG.nextInt(100) < 75) {
                 idx = find(hand, CardType.ATTACK_TO);
                 if (idx >= 0) {
-                    String target = pickWeakestTarget(bot, players);
+                    String target = pickThreat(bot, players);
                     if (target != null) return BotAction.play(List.of(idx), target);
                 }
                 if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
@@ -188,23 +237,27 @@ public class BotLogic {
             }
         }
 
-        // ── Safe zone: hard bot plays proactively ──
-        // SEE_THE_FUTURE: 65% — intel is always valuable
-        if (RNG.nextInt(100) < 65) {
+        // ── SAFE ZONE: proactive strategic plays ──
+        // Always think even when safe — this is what separates skilled players
+
+        // 1. Intel: SEE_THE_FUTURE (60%) — a smart player always wants to know
+        if (noBomb || RNG.nextInt(100) < 60) {
             int idx = find(hand, CardType.SEE_THE_FUTURE);
             if (idx >= 0) return BotAction.play(List.of(idx));
         }
-        // ATTACK: 60% — ATTACK_TO targets weakest, fallback to regular ATTACK
-        if (RNG.nextInt(100) < 60) {
+
+        // 2. Pressure: attack the most threatening player (55%)
+        if (RNG.nextInt(100) < 55) {
             int idx = find(hand, CardType.ATTACK_TO);
             if (idx >= 0) {
-                String target = pickWeakestTarget(bot, players);
+                String target = pickThreat(bot, players);
                 if (target != null) return BotAction.play(List.of(idx), target);
             }
             if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
         }
-        // FAVOR: 40% — steal from the player with the most cards
-        if (RNG.nextInt(100) < 40) {
+
+        // 3. Resource denial: steal from the richest (45%)
+        if (RNG.nextInt(100) < 45) {
             int idx = find(hand, CardType.FAVOR);
             if (idx >= 0) {
                 String target = pickRichestTarget(bot, players);
@@ -212,6 +265,13 @@ public class BotLogic {
             }
         }
 
+        // 4. CTF to set up future advantage even when safe (20%)
+        if (RNG.nextInt(100) < 20) {
+            int idx = find(hand, CardType.CHANGE_THE_FUTURE);
+            if (idx >= 0) return BotAction.play(List.of(idx));
+        }
+
+        // 5. Draw — assess risk bravely
         return BotAction.draw();
     }
 
@@ -219,13 +279,6 @@ public class BotLogic {
 
     /**
      * Should the bot NOPE the pending action?
-     *
-     * @param bot           the bot considering NOPE
-     * @param actionPlayer  who played the card
-     * @param actionType    card type being played
-     * @param actionTarget  intended target (may be null)
-     * @param players       all players
-     * @param isCurrentlyNoped current NOPE parity (true = action is currently cancelled)
      */
     public static boolean decideNope(Player bot, Player actionPlayer, CardType actionType,
                                      String actionTarget, List<Player> players, boolean isCurrentlyNoped) {
@@ -236,12 +289,10 @@ public class BotLogic {
         boolean isTargeted = bot.getName().equals(actionTarget);
 
         return switch (bot.getBotDifficulty()) {
-            case "EASY" -> RNG.nextInt(100) < 15;  // 15% random
+            case "EASY" -> RNG.nextInt(100) < 15;  // 15% random chaos
 
             case "MEDIUM" -> {
-                // Already cancelled? Only counter-NOPE if directly targeted
                 if (isCurrentlyNoped) yield isTargeted && RNG.nextInt(100) < 25;
-
                 if (isTargeted && (actionType == CardType.ATTACK_TO || actionType == CardType.FAVOR))
                     yield RNG.nextInt(100) < 60;
                 if (actionType == CardType.ATTACK && isNextInLine(bot, actionPlayer, players))
@@ -250,15 +301,33 @@ public class BotLogic {
             }
 
             case "HARD" -> {
-                if (isCurrentlyNoped) yield isTargeted && RNG.nextInt(100) < 50;
+                // Counter-NOPE: re-enable our own card (high prio when targeted)
+                if (isCurrentlyNoped) {
+                    if (isTargeted) yield RNG.nextInt(100) < 60; // fight back
+                    yield RNG.nextInt(100) < 10; // rarely counter-NOPE others' NOPEs
+                }
 
-                if (isTargeted && (actionType == CardType.ATTACK_TO || actionType == CardType.FAVOR))
-                    yield RNG.nextInt(100) < 85;
+                // ATTACK_TO aimed at us — always fight it
+                if (isTargeted && actionType == CardType.ATTACK_TO)
+                    yield RNG.nextInt(100) < 92;
+
+                // FAVOR targeting us — protect DEFUSE at all costs, less so otherwise
+                if (isTargeted && actionType == CardType.FAVOR) {
+                    boolean hasDefuse = bot.getHand().stream()
+                            .anyMatch(c -> c.getType() == CardType.DEFUSE);
+                    yield hasDefuse ? RNG.nextInt(100) < 85 : RNG.nextInt(100) < 40;
+                }
+
+                // Regular ATTACK that will hit us next in line
                 if (actionType == CardType.ATTACK && isNextInLine(bot, actionPlayer, players))
-                    yield RNG.nextInt(100) < 65;
-                // Hard bots also NOPE attacks that land on allies when it's strategically useful
-                if (actionType == CardType.ATTACK && RNG.nextInt(100) < 15) yield true;
-                yield RNG.nextInt(100) < 15;
+                    yield RNG.nextInt(100) < 70;
+
+                // Chaos play: disrupt someone else's attack (not targeting us) — low chance
+                if (actionType == CardType.ATTACK_TO && !isTargeted)
+                    yield RNG.nextInt(100) < 12;
+
+                // Random disruption
+                yield RNG.nextInt(100) < 8;
             }
 
             default -> false;
@@ -269,15 +338,18 @@ public class BotLogic {
 
     /**
      * Returns the deck index at which the bot places the bomb.
-     * Index 0 = bottom, deckSize = top (just drawn).
+     * Index 0 = bottom, deckSize = top (just drawn position).
      */
     public static int decidePlaceBomb(Player bot, int deckSize) {
         if (deckSize == 0) return 0;
         return switch (bot.getBotDifficulty()) {
             case "HARD" -> {
-                // Bury deep — at least 4 positions from the top
-                int minDepth = Math.min(4, deckSize);
-                yield RNG.nextInt(minDepth + 1); // 0…minDepth (0 = bottom)
+                // Human strategy: bury in lower-middle zone
+                // Avoid index 0 (UNDER draws from bottom) and top
+                // Target 25–50% from bottom
+                int low  = Math.max(1, deckSize / 4);
+                int high = Math.max(low + 1, deckSize / 2);
+                yield low + RNG.nextInt(Math.max(1, high - low));
             }
             default -> RNG.nextInt(deckSize + 1); // random
         };
@@ -290,7 +362,7 @@ public class BotLogic {
         List<Card> hand = bot.getHand();
         if (hand.isEmpty()) return 0;
 
-        // 1st priority: give a random-colour MEOW (least useful)
+        // 1st priority: give a MEOW card (least useful)
         for (int i = 0; i < hand.size(); i++) {
             CardType t = hand.get(i).getType();
             if (t.name().startsWith("MEOW")) return i;
@@ -311,20 +383,20 @@ public class BotLogic {
 
     /**
      * Returns the new card order for ALTER_FUTURE.
-     * Index 0 = next card to be drawn (top of deck).
+     * Index 0 in result = next card to be drawn (top of deck).
      */
     public static List<String> decideAlterFuture(Player bot, List<Card> futureCards) {
         List<Card> sorted = new ArrayList<>(futureCards);
 
         if ("HARD".equals(bot.getBotDifficulty())) {
-            // Push bomb to position 2 (furthest from top)
+            // Push bomb to position 2 (last of the revealed 3 = furthest from top)
             sorted.sort((a, b) -> {
                 if (a.getType() == CardType.BOOMS) return 1;
                 if (b.getType() == CardType.BOOMS) return -1;
                 return 0;
             });
         } else {
-            // Easy/Medium: random re-order (may accidentally help or hurt)
+            // Easy/Medium: random re-order
             Collections.shuffle(sorted);
         }
 
@@ -340,7 +412,7 @@ public class BotLogic {
 
         idx = find(hand, CardType.ATTACK_TO);
         if (idx >= 0) {
-            String target = pickWeakestTarget(bot, players);
+            String target = pickThreat(bot, players);
             if (target != null) return BotAction.play(List.of(idx), target);
         }
         if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
@@ -353,7 +425,7 @@ public class BotLogic {
         for (int i = 0; i < hand.size(); i++) {
             CardType t = hand.get(i).getType();
             if (t == CardType.DEFUSE || t == CardType.BOOMS || t == CardType.NOPE) continue;
-            if (t.name().startsWith("MEOW")) continue; // needs combo
+            if (t.name().startsWith("MEOW")) continue;
             result.add(i);
         }
         return result;
@@ -370,12 +442,42 @@ public class BotLogic {
         return -1;
     }
 
+    /**
+     * Returns the 0-based index of the nearest bomb from the top of the deck.
+     * 0 = top card (about to be drawn), -1 = no bomb in deck.
+     */
+    private static int nearestBombFromTop(Stack<Card> deck) {
+        int size = deck.size();
+        for (int i = 0; i < size; i++) {
+            if (deck.get(size - 1 - i).getType() == CardType.BOOMS) return i;
+        }
+        return -1;
+    }
+
+    private static boolean bombNearTop(Stack<Card> deck, int depth) {
+        return nearestBombFromTop(deck) >= 0 && nearestBombFromTop(deck) < depth;
+    }
+
+    // ── Targeting helpers ──
+
     private static String pickRandomTarget(Player bot, List<Player> players) {
         List<Player> targets = alivePlayers(players, bot.getName());
         if (targets.isEmpty()) return null;
         return targets.get(RNG.nextInt(targets.size())).getName();
     }
 
+    /**
+     * Pick the most threatening alive opponent — the one with the most cards.
+     * More cards = more tools = most dangerous.
+     */
+    private static String pickThreat(Player bot, List<Player> players) {
+        return alivePlayers(players, bot.getName()).stream()
+                .max(Comparator.comparingInt(p -> p.getHand().size()))
+                .map(Player::getName)
+                .orElse(null);
+    }
+
+    /** Pick the player with the fewest cards (easiest to finish off). */
     private static String pickWeakestTarget(Player bot, List<Player> players) {
         return alivePlayers(players, bot.getName()).stream()
                 .min(Comparator.comparingInt(p -> p.getHand().size()))
@@ -383,7 +485,7 @@ public class BotLogic {
                 .orElse(null);
     }
 
-    /** Pick the player with the most cards (best FAVOR target). */
+    /** Pick the player with the most cards (best FAVOR target for resource denial). */
     private static String pickRichestTarget(Player bot, List<Player> players) {
         return alivePlayers(players, bot.getName()).stream()
                 .max(Comparator.comparingInt(p -> p.getHand().size()))
@@ -396,14 +498,6 @@ public class BotLogic {
                 .filter(p -> !p.getName().equals(excludeName))
                 .filter(p -> !p.isExploded() && !p.isSpectator())
                 .toList();
-    }
-
-    private static boolean bombNearTop(Stack<Card> deck, int depth) {
-        int size = deck.size();
-        for (int i = 0; i < Math.min(depth, size); i++) {
-            if (deck.get(size - 1 - i).getType() == CardType.BOOMS) return true;
-        }
-        return false;
     }
 
     private static boolean isNextInLine(Player bot, Player actionPlayer, List<Player> players) {
