@@ -85,21 +85,47 @@
         </div>
         <div id="timerText" class="position-absolute w-100 text-center fw-bold" style="top: 15px; color: #f1416c; text-shadow: 1px 1px 0 #000; z-index: 101;"></div>
 
-        <div class="d-flex justify-content-between align-items-center bg-dark p-2 shadow-sm" style="z-index: 20;">
-            <div class="opponent-area flex-grow-1" id="opponentsBox">
-            </div>
-            <div>
-                <button onclick="leaveRoom()" class="btn btn-sm btn-danger ms-2" title="ออกห้อง">
-                    <i class="fas fa-sign-out-alt"></i>
+        <!-- Log Toast: แสดงแปบหนึ่งใต้ timer -->
+        <div id="logToast"></div>
+
+        <div class="game-navbar">
+            <div class="player-chips-area" id="opponentsBox"></div>
+            <div class="navbar-actions">
+                <!-- hamburger สำหรับมือถือ -->
+                <button class="nav-btn btn-hamburger d-none" id="navHamburger" onclick="toggleNavDropdown()">
+                    <i class="fas fa-bars"></i>
                 </button>
-                <button class="btn btn-sm btn-info ms-2" onclick="showHowToPlay()" title="วิธีเล่น">
-                    <i class="fas fa-question-circle"></i>
-                </button>
-                <button id="readyBtn" class="btn btn-sm btn-secondary ms-2" style="display:none;" onclick="toggleReady()">
-                    กดเมื่อพร้อม
-                </button>
-                <button onclick="startGame()" id="startBtn" class="btn btn-sm btn-success ms-2" disabled><i class="fas fa-flag"></i> Start</button>
-                <button onclick="resetGame()" id="resetBtn" class="btn btn-sm btn-warning ms-1" disabled><i class="fas fa-sync"></i> Reset</button>
+                <div id="navDropdown" class="nav-dropdown">
+                    <button onclick="leaveRoom()" class="nav-btn btn-leave" title="ออกห้อง">
+                        <i class="fas fa-door-open"></i><span>ออก</span>
+                    </button>
+                    <button class="nav-btn btn-help" onclick="showHowToPlay()" title="วิธีเล่น">
+                        <i class="fas fa-question"></i>
+                    </button>
+                    <button id="readyBtn" class="nav-btn btn-ready" style="display:none;" onclick="toggleReady()">
+                        <i class="fas fa-hand-paper"></i><span>พร้อม?</span>
+                    </button>
+                    <!-- 🤖 Add Bot (host only, pre-game) — inline expand -->
+                    <div id="addBotWrap" style="display:none; align-items:center; gap:4px;">
+                        <!-- collapsed: แค่ปุ่ม +Bot -->
+                        <button id="addBotBtn" class="nav-btn btn-add-bot" onclick="toggleBotMenu()" title="เพิ่มบอท">
+                            <i class="fas fa-robot"></i><span>+Bot</span>
+                        </button>
+                        <!-- expanded: 3 ตัวเลือก inline -->
+                        <div id="botChoices" style="display:none; align-items:center; gap:3px;">
+                            <button onclick="addBot('EASY')"   class="nav-btn bot-opt-btn easy-btn"  title="Kitten Easy">😺</button>
+                            <button onclick="addBot('MEDIUM')" class="nav-btn bot-opt-btn medium-btn" title="Cat Medium">🐱</button>
+                            <button onclick="addBot('HARD')"   class="nav-btn bot-opt-btn hard-btn"  title="Tiger Hard">🐯</button>
+                            <button onclick="toggleBotMenu()"  class="nav-btn bot-opt-btn close-btn" title="ยกเลิก">✕</button>
+                        </div>
+                    </div>
+                    <button onclick="startGame()" id="startBtn" class="nav-btn btn-start" disabled>
+                        <i class="fas fa-flag"></i><span>Start</span>
+                    </button>
+                    <button onclick="resetGame()" id="resetBtn" class="nav-btn btn-reset" style="display:none;" disabled>
+                        <i class="fas fa-sync"></i><span>Reset</span>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -506,7 +532,7 @@
 
                     players.forEach(p => {
                         if (p.name === myName) return; // ไม่เลือกตัวเอง
-                        if (p.exploded || !p.online) return; // ไม่เลือกคนที่ตายและไม่อยู่
+                        if (p.exploded || !p.online || p.spectator) return; // ไม่เลือกคนที่ตาย/ออฟไลน์/spectator
 
                         let btn = document.createElement('div');
                         btn.className = 'select-btn';
@@ -991,37 +1017,43 @@
                 const me = state.allPlayers.find(p => p.name === myName);
                 const isHost = me && me.host;
 
+                const addBotWrap = document.getElementById('addBotWrap');
+
                 if (isHost) {
                     readyBtn.style.display = 'none';
                     if (state.isGameStarted) {
                         startBtn.style.display = 'none';
-                        resetBtn.style.display = 'inline-block';
+                        resetBtn.style.display = 'inline-flex';
                         resetBtn.disabled = false;
+                        if (addBotWrap) addBotWrap.style.display = 'none';
                     } else {
-                        startBtn.style.display = 'inline-block';
-                        resetBtn.style.display = 'none'; // หรือโชว์ก็ได้
+                        startBtn.style.display = 'inline-flex';
+                        resetBtn.style.display = 'none';
                         resetBtn.disabled = true;
-                        const othersReady = state.allPlayers.filter(p => p.ready && !p.host).length;
-                        const totalReady = othersReady + 1; // +1 คือหัวห้อง
+                        const humanCount = state.allPlayers.filter(p => !p.bot).length;
+                        const botCount   = state.allPlayers.filter(p => p.bot).length;
+                        const totalReady = state.allPlayers.filter(p => p.ready || p.host).length;
                         startBtn.disabled = (totalReady < 2);
-                        startBtn.innerHTML = `<i class="fas fa-flag"></i> Start (${totalReady})`;
+                        startBtn.innerHTML = `<i class="fas fa-flag"></i><span>Start (${totalReady})</span>`;
+                        // แสดงปุ่ม Add Bot ถ้าห้องยังไม่เต็ม
+                        if (addBotWrap) addBotWrap.style.display = (state.allPlayers.length < 10) ? 'flex' : 'none';
                     }
                 } else {
                     // ถ้าไม่ใช่ Host -> ซ่อนหมด หรือ Disable ไว้
                     startBtn.style.display = 'none';
                     resetBtn.style.display = 'none';
+                    if (addBotWrap) addBotWrap.style.display = 'none';
 
                     if (state.isGameStarted) {
-                        readyBtn.style.display = 'none'; // เกมเริ่มแล้วซ่อนปุ่ม
+                        readyBtn.style.display = 'none';
                     } else {
-                        readyBtn.style.display = 'inline-block';
-                        // เปลี่ยนสี/ข้อความตามสถานะ
+                        readyBtn.style.display = 'inline-flex';
                         if (me && me.ready) {
-                            readyBtn.innerHTML = '<i class="fas fa-check"></i> พร้อมแล้ว';
-                            readyBtn.className = 'btn btn-sm btn-success ms-2';
+                            readyBtn.innerHTML = '<i class="fas fa-check"></i><span>พร้อมแล้ว</span>';
+                            readyBtn.classList.add('is-ready');
                         } else {
-                            readyBtn.innerHTML = 'กดเมื่อพร้อม';
-                            readyBtn.className = 'btn btn-sm btn-secondary ms-2';
+                            readyBtn.innerHTML = '<i class="fas fa-hand-paper"></i><span>พร้อม?</span>';
+                            readyBtn.classList.remove('is-ready');
                         }
                     }
                 }
@@ -1110,62 +1142,68 @@
             const targetName = window.lastGameState ? window.lastGameState.pendingActionPlayer : null;
 
             let myIndex = players.findIndex(p => p.name === myName);
-            if (myIndex === -1) myIndex = 0; // กรณี observer หรือหาไม่เจอ
+            if (myIndex === -1) myIndex = 0;
 
             const me = window.lastGameState.allPlayers.find(p => p.name === myName);
             const isImHost = me && me.host;
 
-            // 2. สร้าง Array ใหม่ที่เรียงลำดับเริ่มจาก "คนถัดจากเรา" วนไปจนจบที่ "ตัวเรา"
-            // สูตร: (myIndex + 1 + i) % total
             let sortedPlayers = [];
             for (let i = 1; i <= players.length; i++) {
-                let pIndex = (myIndex + i) % players.length;
-                sortedPlayers.push(players[pIndex]);
+                sortedPlayers.push(players[(myIndex + i) % players.length]);
             }
 
             sortedPlayers.forEach(p => {
                 const isMe = (p.name === myName);
+                const isTarget = (p.name === targetName && targetName !== null);
+                const isActive = (p.name === currentTurn);
+                const isGameStarted = window.lastGameState.isGameStarted;
 
                 let div = document.createElement('div');
-                const isTarget = (p.name === targetName && targetName !== null);
-                div.className = `opponent-card ${p.name === currentTurn ? 'active-turn' : ''} ${!p.online ? 'offline-player' : ''} ${isTarget ? 'shake-soft' : ''} ${isMe ? 'border border-warning bg-opacity-10 bg-warning' : ''}`;
+                let classes = 'player-chip';
+                if (isMe)      classes += ' chip-me';
+                if (isActive)  classes += ' chip-active';
+                if (!p.online) classes += ' chip-offline';
+                if (isTarget)  classes += ' shake-soft';
+                if (p.exploded) classes += ' chip-exploded';
+                div.className = classes;
 
-                let statusIcon = p.exploded ? '💀' : (p.online ? '👤' : '🔌');
-                if (isMe && !p.exploded) statusIcon = '🐱 (Me)';
+                // avatar emoji
+                let avatar;
+                if (p.exploded)    avatar = '💀';
+                else if (p.bot)    avatar = p.botDifficulty === 'HARD' ? '🐯' : (p.botDifficulty === 'MEDIUM' ? '🐱' : '😺');
+                else if (isMe)     avatar = '😸';
+                else if (p.online) avatar = '😺';
+                else               avatar = '🔌';
 
-                let readyBadge = "";
-                if (!window.lastGameState.isGameStarted) {
-                    if (p.ready || p.host) {
-                        readyBadge = '<span class="badge bg-success ms-1" style="font-size: 8px;">✅ Ready</span>';
+                // status badge (pre-game)
+                let statusBadge = '';
+                if (!isGameStarted) {
+                    if (p.bot) {
+                        const diffLabel = p.botDifficulty === 'EASY' ? 'Easy' : p.botDifficulty === 'MEDIUM' ? 'Med' : 'Hard';
+                        statusBadge = `<span class="chip-badge badge-bot">🤖 ${diffLabel}</span>`;
                     } else {
-                        readyBadge = '<span class="badge bg-secondary ms-1" style="font-size: 8px;">⏳ รอ..</span>';
+                        statusBadge = (p.ready || p.host)
+                            ? '<span class="chip-badge badge-ready">✓</span>'
+                            : '<span class="chip-badge badge-wait">…</span>';
                     }
                 }
 
-                if(p.exploded) div.style.opacity = '0.5';
+                // card count (in-game)
+                let cardCount = isGameStarted
+                    ? `<span class="chip-cards">${p.hand.length}</span>`
+                    : '';
 
-                let kickBtnHTML = "";
-                if (isImHost && p.name !== myName) {
-                    // ใส่ปุ่มเล็กๆ ไว้มุม
-                    kickBtnHTML = `
-                        <button onclick="event.stopPropagation(); kickPlayer('${p.name}')"
-                                class="btn btn-sm p-0 d-flex justify-content-center align-items-center position-absolute top-0 end-0 m-1 shadow-sm"
-                                style="width: 20px; height: 20px; font-size: 10px; border-radius: 50%; z-index: 10;"
-                                title="เตะออกจากห้อง">
-                            <i class="fas fa-times"></i>
-                        </button>`;
-                }
-
-                let hostIcon = p.host ? '<i class="fas fa-crown text-warning me-1" title="หัวห้อง"></i>' : '';
+                // crown + kick
+                let crownHtml = p.host ? '<span class="chip-crown">👑</span>' : '';
+                // Host can kick anyone who isn't themselves (including bots)
+                let kickHtml = (isImHost && !isMe && !isGameStarted)
+                    ? `<button class="chip-kick" onclick="event.stopPropagation();kickPlayer('${p.name}')" title="เตะ">✕</button>`
+                    : '';
 
                 div.innerHTML = `
-                    ${kickBtnHTML}
-                    <div class="fs-4">${statusIcon}</div>
-                    <div class="fw-bold small text-white mt-1">
-                        ${hostIcon}${p.name}
-                    </div>
-                    ${readyBadge}
-                    <div class="badge bg-secondary mt-1" style="font-size: 9px;">${p.hand.length} ใบ</div>
+                    <span class="chip-avatar">${avatar}</span>
+                    <span class="chip-name">${crownHtml}${p.name}</span>
+                    ${statusBadge}${cardCount}${kickHtml}
                 `;
                 div.style.position = 'relative';
                 box.appendChild(div);
@@ -1176,6 +1214,29 @@
             if(!confirm("แน่ใจนะว่าจะเตะ " + targetName + "?")) return;
             let req = { roomId: currentRoomId, hostName: myName, targetName: targetName };
             stompClient.send("/app/kick", {}, JSON.stringify(req));
+        }
+
+        // 🤖 Bot helpers
+        function addBot(difficulty) {
+            hideBotMenu(); // ปิด choices กลับเป็น +Bot
+            let req = { roomId: currentRoomId, hostName: myName, difficulty: difficulty };
+            stompClient.send("/app/add-bot", {}, JSON.stringify(req));
+        }
+
+        function toggleBotMenu() {
+            const choices = document.getElementById('botChoices');
+            const mainBtn = document.getElementById('addBotBtn');
+            if (!choices) return;
+            const isOpen = choices.style.display !== 'none';
+            choices.style.display = isOpen ? 'none' : 'flex';
+            mainBtn.style.display = isOpen ? 'inline-flex' : 'none';
+        }
+
+        function hideBotMenu() {
+            const choices = document.getElementById('botChoices');
+            const mainBtn = document.getElementById('addBotBtn');
+            if (choices) choices.style.display = 'none';
+            if (mainBtn) mainBtn.style.display = 'inline-flex';
         }
 
         function renderMyHand(hand) {
@@ -1406,6 +1467,19 @@
 
                 if (soundToPlay) {
                     playSound(soundToPlay);
+                }
+
+                // แสดง toast สำหรับ log ใหม่ที่มองเห็นได้ (ไม่ใช่ special)
+                const visibleNew = newLogs.filter(l =>
+                    !l.startsWith("SECRET|") && !l.startsWith("TIMER_START|") &&
+                    !l.startsWith("TIMER_RESET|") && !l.startsWith("GIVE|") &&
+                    !l.startsWith("STEAL|") && !l.startsWith("ALTER|") && !l.startsWith("PICK_DISCARD|")
+                );
+                if (visibleNew.length > 0) {
+                    // เอาแค่ content (ตัดเวลาออก)
+                    const raw = visibleNew[0];
+                    const content = raw.substring(raw.indexOf(']') + 1).trim();
+                    showLogToast(content);
                 }
 
                 if(logs.length > 0) lastTopLog = logs[0];
@@ -1870,6 +1944,35 @@
                 }
             }, 1000);
         }
+
+        // --- Log Toast ---
+        let toastTimer = null;
+        function showLogToast(text) {
+            const el = document.getElementById('logToast');
+            if (!el) return;
+            el.textContent = text;
+            el.classList.remove('toast-hide');
+            el.classList.add('toast-show');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                el.classList.remove('toast-show');
+                el.classList.add('toast-hide');
+            }, 3000);
+        }
+
+        // --- Mobile Hamburger ---
+        function toggleNavDropdown() {
+            const drop = document.getElementById('navDropdown');
+            drop.classList.toggle('open');
+        }
+        // ปิด dropdown เมื่อคลิกที่อื่น
+        document.addEventListener('click', function(e) {
+            const drop = document.getElementById('navDropdown');
+            const btn = document.getElementById('navHamburger');
+            if (drop && btn && !drop.contains(e.target) && !btn.contains(e.target)) {
+                drop.classList.remove('open');
+            }
+        });
 
         function toggleMobileLog() {
             const logBox = document.getElementById('gameLogBox');

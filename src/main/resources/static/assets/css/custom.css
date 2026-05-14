@@ -598,3 +598,245 @@ body {
     transform: rotate(0deg) scale(1.05) !important; /* พอเอาเมาส์ชี้ ให้ตั้งตรงและขยาย */
     z-index: 10;
 }
+
+/* ===================== GAME NAVBAR ===================== */
+.game-navbar {
+    display: flex;
+    align-items: center;
+    background: #13131f;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 6px 10px;
+    gap: 8px;
+    flex-shrink: 0;
+    min-height: 56px;
+    z-index: 20;
+}
+
+/* --- Player Chips Area --- */
+.player-chips-area {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 6px;
+    flex-grow: 1;
+    scrollbar-width: none;
+    padding: 2px 0;
+}
+.player-chips-area::-webkit-scrollbar { display: none; }
+
+/* --- Player Chip --- */
+.player-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #2b2b40;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-radius: 999px;
+    padding: 4px 10px 4px 6px;
+    white-space: nowrap;
+    cursor: default;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    position: relative;
+    flex-shrink: 0;
+}
+.player-chip.chip-me {
+    border-color: #ffc700;
+    background: #2e2a14;
+}
+.player-chip.chip-active {
+    border-color: #00b2ff;
+    box-shadow: 0 0 8px rgba(0,178,255,0.5);
+}
+.player-chip.chip-offline {
+    opacity: 0.5;
+    border-style: dashed;
+    border-color: #f1416c;
+}
+.player-chip.chip-exploded {
+    opacity: 0.4;
+    text-decoration: line-through;
+}
+
+.chip-avatar {
+    font-size: 1.25rem;
+    line-height: 1;
+}
+.chip-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #ffffff;
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.chip-crown {
+    font-size: 0.7rem;
+    margin-right: 2px;
+}
+.chip-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 1px 5px;
+    line-height: 1.4;
+}
+.badge-ready {
+    background: #1a4731;
+    color: #50cd89;
+    border: 1px solid #50cd89;
+}
+.badge-wait {
+    background: #2b2b40;
+    color: #a1a5b7;
+    border: 1px solid #3f4254;
+}
+.chip-cards {
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: #3f4254;
+    color: #fff;
+    border-radius: 999px;
+    padding: 1px 6px;
+}
+.chip-kick {
+    background: none;
+    border: none;
+    color: #f1416c;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0 0 0 2px;
+    line-height: 1;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+}
+.chip-kick:hover { opacity: 1; }
+
+/* Bot difficulty badge */
+.badge-bot {
+    background: #1a2540;
+    color: #7eb8f7;
+    border: 1px solid #3a5a9a;
+    font-size: 0.6rem;
+}
+
+/* --- Navbar Action Buttons --- */
+.navbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    position: relative;
+}
+.nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: none;
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    white-space: nowrap;
+}
+.nav-btn:active { transform: scale(0.95); }
+.nav-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.nav-btn i { font-size: 0.8rem; }
+
+.btn-leave  { background: #3a1020; color: #f1416c; }
+.btn-leave:hover  { background: #f1416c; color: #fff; }
+
+.btn-help   { background: #1a2540; color: #7eb8f7; padding: 5px 8px; }
+.btn-help:hover   { background: #009ef7; color: #fff; }
+
+.btn-ready  { background: #2b2b40; color: #a1a5b7; }
+.btn-ready.is-ready { background: #1a4731; color: #50cd89; }
+
+.btn-start  { background: #1a4731; color: #50cd89; }
+.btn-start:not(:disabled):hover { background: #50cd89; color: #fff; }
+
+.btn-reset  { background: #3a2b10; color: #ffc700; }
+.btn-reset:not(:disabled):hover { background: #ffc700; color: #000; }
+
+/* Add-bot button */
+.btn-add-bot { background: #1a2540; color: #7eb8f7; }
+.btn-add-bot:hover { background: #009ef7; color: #fff; }
+
+/* Bot difficulty inline choice buttons */
+.bot-opt-btn {
+    padding: 5px 8px;
+    font-size: 1rem;
+    line-height: 1;
+    background: #2b2b40;
+}
+.bot-opt-btn.easy-btn   { background: #1a3828; }
+.bot-opt-btn.easy-btn:hover   { background: #50cd89; }
+.bot-opt-btn.medium-btn { background: #3a2e00; }
+.bot-opt-btn.medium-btn:hover { background: #ffc700; }
+.bot-opt-btn.hard-btn   { background: #3a1020; }
+.bot-opt-btn.hard-btn:hover   { background: #f1416c; }
+.bot-opt-btn.close-btn  { background: #2b2b40; color: #a1a5b7; font-size: 0.75rem; }
+.bot-opt-btn.close-btn:hover  { background: #3f4254; }
+
+/* hamburger ซ่อนบน desktop */
+.btn-hamburger { background: #2b2b40; color: #a1a5b7; }
+.btn-hamburger:hover { background: #3f4254; color: #fff; }
+
+/* dropdown actions (mobile) */
+.nav-dropdown {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+@media (max-width: 600px) {
+    .player-chips-area { max-width: calc(100vw - 56px); }
+
+    /* ซ่อน action buttons ปกติ แสดงแค่ hamburger */
+    #navHamburger { display: inline-flex !important; }
+    .nav-dropdown {
+        display: none;
+        position: absolute;
+        top: 100%;
+        right: 0;
+        background: #1e1e30;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 10px;
+        padding: 8px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        z-index: 200;
+        min-width: 140px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    .nav-dropdown.open { display: flex; }
+    .nav-dropdown .nav-btn { justify-content: flex-start; }
+}
+
+/* ===================== LOG TOAST ===================== */
+#logToast {
+    position: absolute;
+    top: 62px; /* ใต้ navbar */
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20, 20, 35, 0.92);
+    color: #e4e6ef;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 20px;
+    padding: 5px 16px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    white-space: nowrap;
+    max-width: 90vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    z-index: 150;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+#logToast.toast-show { opacity: 1; }
+#logToast.toast-hide { opacity: 0; }

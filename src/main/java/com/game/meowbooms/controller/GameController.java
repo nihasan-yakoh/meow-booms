@@ -160,6 +160,15 @@ public class GameController {
         }
     }
 
+    @MessageMapping("/add-bot")
+    public void addBot(AddBotRequest request) {
+        try {
+            roomManager.addBot(request.getRoomId(), request.getHostName(), request.getDifficulty());
+        } catch (Exception e) {
+            sendError(request.getRoomId(), request.getHostName(), e.getMessage());
+        }
+    }
+
     @MessageMapping("/kick")
     public void kickPlayer(KickRequest request) {
         try {

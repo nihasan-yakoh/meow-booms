@@ -64,6 +64,12 @@ public class RoomManager {
                 .collect(Collectors.toList());
     }
 
+    public void addBot(String roomId, String hostName, String difficulty) {
+        GameService game = getRoom(roomId);
+        game.addBot(hostName, difficulty);
+        broadcastRoomList();
+    }
+
     public void leaveRoom(String roomId, String playerName) {
         GameService game = getRoom(roomId);
         game.leaveGame(playerName);

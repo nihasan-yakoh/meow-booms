@@ -10,6 +10,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 import static java.time.LocalTime.now;
 
@@ -28,11 +29,7 @@ public class GameService {
 
     private Map<String, String> sessionMap = new ConcurrentHashMap<>();
 
-    private Map<String, ScheduledFuture<?>> disconnectTimers = new ConcurrentHashMap<>();
-
-    private static final long AFK_TIMEOUT_SECONDS = 30;
-
-    private ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    private ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private ScheduledFuture<?> pendingTask; // ตัวเก็บ Task ที่กำลังนับถอยหลัง
 
     private List<Player> players = new ArrayList<>();
@@ -82,11 +79,13 @@ public class GameService {
 
         if (existingPlayer != null) {
 
-            logMsg("♻️ " + existingPlayer.getName() + " กลับมาเชื่อมต่อใหม่! (ยกเลิกระเบิดเวลา)");
-
-            if (disconnectTimers.containsKey(existingPlayer.getName())) {
-                disconnectTimers.get(existingPlayer.getName()).cancel(false);
-                disconnectTimers.remove(existingPlayer.getName());
+            // ถ้าเดิมเป็น Ghost Bot (หลุดระหว่างเกม) ให้คืนเป็นมนุษย์
+            if (existingPlayer.isBot() && !existingPlayer.getToken().startsWith("BOT_")) {
+                existingPlayer.setBot(false);
+                existingPlayer.setBotDifficulty(null);
+                logMsg("🙋 " + existingPlayer.getName() + " กลับมาควบคุมตัวเองได้แล้ว!");
+            } else {
+                logMsg("♻️ " + existingPlayer.getName() + " กลับมาเชื่อมต่อใหม่!");
             }
 
             sessionMap.values().removeIf(val -> val.equals(existingPlayer.getName()));
@@ -166,61 +165,49 @@ public class GameService {
         Player p = getPlayerByName(name);
         if (p == null) return;
 
-        p.setOnline(false);
-
         if (p.isHost()) {
-            p.setHost(false); // ปลดตำแหน่งก่อน
-            validateHost();   // หาคนใหม่เสียบ
+            p.setHost(false);
+            validateHost();
         }
 
         if (!isGameStarted) {
-            players.remove(p); // ลบออกจาก List
-
-            // ลบ Timer เผื่อมีค้าง (กันเหนียว)
-            if (disconnectTimers.containsKey(name)) {
-                disconnectTimers.get(name).cancel(false);
-                disconnectTimers.remove(name);
-            }
-
+            // ก่อนเกม: ลบออกจากห้องเลย
+            players.remove(p);
             logMsg("👋 " + name + " ออกจากห้อง Lobby");
-
-            // แจ้งทุกคนให้รีเฟรชหน้าจอ (ชื่อเพื่อนจะหายไป)
             messagingTemplate.convertAndSend(roomTopic, getGameState());
             return;
         }
 
-        if (p.isExploded()) return;
+        if (p.isExploded() || p.isSpectator()) {
+            p.setOnline(false);
+            messagingTemplate.convertAndSend(roomTopic, getGameState());
+            return;
+        }
 
-        logMsg("🔌 " + name + " หลุดการเชื่อมต่อ! (จะระเบิดตัวเองใน " + AFK_TIMEOUT_SECONDS + " วิ)");
-
-        ScheduledFuture<?> timer = scheduler.schedule(() -> {
-            handleAFKTimeout(name);
-        }, AFK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-        disconnectTimers.put(name, timer);
-
+        // ระหว่างเกม: กลายเป็น Ghost Bot แทนการตาย
+        logMsg("🔌 " + name + " หลุดการเชื่อมต่อ — 🤖 บอทเข้ามาเล่นแทนชั่วคราว");
+        convertToGhostBot(p);
         messagingTemplate.convertAndSend(roomTopic, getGameState());
     }
 
-    private void handleAFKTimeout(String name) {
-        disconnectTimers.remove(name);
+    /**
+     * แปลงผู้เล่นที่หลุดการเชื่อมต่อเป็น Ghost Bot ชั่วคราว
+     * Token ของเขายังเก็บไว้ เมื่อ reconnect จะรับช่วงต่อได้
+     */
+    private void convertToGhostBot(Player p) {
+        p.setBot(true);
+        p.setBotDifficulty("EASY");
+        p.setOnline(true); // บอทต้องออนไลน์เสมอ (room ไม่ถูก cleanup)
 
-        Player p = getPlayerByName(name);
-        if (p == null || p.isExploded()) return;
-
-        logMsg("💀 " + name + " หายไปนานเกิน! ระบบจึงส่งระเบิดให้กิน");
-
-        p.setExploded(true);
-
-        ensureGameBalance();
-
-        if (currentPlayerName.equals(name)) {
-            nextTurn(); // ข้ามไปเลย
+        // ถ้าเป็นตาของเขาอยู่ ให้บอทเล่นต่อ
+        if (p.getName().equals(currentPlayerName)) {
+            triggerBotTurnIfNeeded(p.getName());
         }
 
-        checkForWinner();
-
-        messagingTemplate.convertAndSend(roomTopic, getGameState());
+        // ถ้ามี interactive action ค้างอยู่ (PLACE_BOMB / GIVE_CARD)
+        if (p.getName().equals(pendingActionPlayer) && pendingActionType != null) {
+            triggerBotInteractiveAction(p.getName(), pendingActionType);
+        }
     }
 
     public void toggleReady(String playerName) {
@@ -351,6 +338,9 @@ public class GameService {
 
         logMsg("👉 ผู้โชคดีได้เริ่มคนแรกคือ: " + player.getName());
         messagingTemplate.convertAndSend(roomTopic, getGameState());
+
+        // 🤖 ถ้าคนแรกเป็น Bot ให้กำหนดเวลาให้บอทเล่น
+        triggerBotTurnIfNeeded(player.getName());
     }
 
     public Object getGameState() {
@@ -376,17 +366,26 @@ public class GameService {
         if (hasHost && (req == null || !req.isHost())) throw new RuntimeException("คุณไม่ใช่หัวห้อง!");
 //        players.clear();
         deck.clear();
-        disconnectTimers.values().forEach(t -> t.cancel(false));
-        disconnectTimers.clear();
         discardPile.clear();
 //        sessionMap.clear();
 
+        // Ghost Bot (คนที่หลุดระหว่างเกม) → คืนเป็นมนุษย์ offline ใน lobby
         players.forEach(p -> {
+            if (p.isBot() && !p.getToken().startsWith("BOT_")) {
+                // Ghost Bot: คืนเป็นมนุษย์, offline, ต้องกด ready ใหม่
+                p.setBot(false);
+                p.setBotDifficulty(null);
+                p.setOnline(false);
+            }
             p.getHand().clear();
             p.setExploded(false);
             p.setSpectator(false);
-            p.setReady(false); // 🔥 รีเซ็ตให้ทุกคนต้องกดพร้อมใหม่
+            // บอทจริง (host เพิ่ม) พร้อมเสมอ, คนต้องกดพร้อมใหม่
+            p.setReady(p.isBot());
         });
+
+        // ลบ Ghost Bot ที่ออกไปแล้ว (isOnline=false) ออกจากห้อง
+        players.removeIf(p -> !p.isOnline() && !p.isBot());
 
         this.pendingActionPlayer = null;
         this.pendingActionType = null;
@@ -461,6 +460,11 @@ public class GameService {
             logMsg(player.getName() + " ใช้ Defuse รอดตายหวุดหวิด!");
 
             messagingTemplate.convertAndSend(roomTopic, getGameState());
+
+            // 🤖 ถ้าผู้เล่นเป็น Bot ให้วางระเบิดอัตโนมัติ
+            if (player.isBot()) {
+                triggerBotInteractiveAction(player.getName(), "PLACE_BOMB");
+            }
 
             // เอา Defuse ออกจากเกม แล้วเอาระเบิดยัดกลับเข้ากอง (สุ่มตำแหน่ง)
             // หมายเหตุ: เกมจริงคนเล่นเลือกตำแหน่งได้ แต่เพื่อความง่ายเราสุ่มเอาครับ
@@ -577,6 +581,9 @@ public class GameService {
 
                 // แจ้งเตือน Frontend
                 messagingTemplate.convertAndSend(roomTopic, getGameState());
+
+                // 🤖 ถ้าคนต่อไปเป็น Bot ให้กำหนดเวลาให้บอทเล่น
+                triggerBotTurnIfNeeded(currentPlayerName);
                 return;
             }
         }
@@ -845,10 +852,10 @@ public class GameService {
             case SKIP :
                 turnsLeft--;
                 if (turnsLeft == 0) {
+                    logMsg("✅ " + playerName + " ใช้ Skip รอดตัวไป!");
                     nextTurn();
-                    logMsg(getCurrentPlayer().getName() + " ใช้ Skip รอดตัวไป!");
                 } else {
-                    logMsg("เหลือต้องเล่นอีก " + turnsLeft + " ครั้ง");
+                    logMsg("✅ " + playerName + " ใช้ Skip (เหลือต้องเล่นอีก " + turnsLeft + " ครั้ง)");
                 }
                 break;
 
@@ -909,6 +916,12 @@ public class GameService {
 
                 logMsg("🫴 " + playerName + " ใช้ Favor ขอการ์ดจาก " + targetPlayerName);
                 logMsg("⏳ รอ " + targetPlayerName + " เลือกการ์ด...");
+
+                // 🤖 ถ้าเหยื่อเป็น Bot ให้ส่งการ์ดอัตโนมัติ
+                Player favorTarget = getPlayerByName(targetPlayerName);
+                if (favorTarget != null && favorTarget.isBot()) {
+                    triggerBotInteractiveAction(targetPlayerName, "GIVE_CARD");
+                }
                 break;
 
             case ATTACK_TO:
@@ -952,6 +965,12 @@ public class GameService {
 
                 pendingActionPlayer = playerName;
                 pendingActionType = "ALTER_FUTURE";
+
+                // 🤖 ถ้าผู้เล่นเป็น Bot ให้จัดการ ALTER_FUTURE อัตโนมัติ
+                Player ctfPlayer = getPlayerByName(playerName);
+                if (ctfPlayer != null && ctfPlayer.isBot()) {
+                    triggerBotInteractiveAction(playerName, "ALTER_FUTURE");
+                }
 
                 Gson gson = new Gson();
 
@@ -1161,6 +1180,9 @@ public class GameService {
         // เมื่อเวลาหมด...
         pendingTask = scheduler.schedule(this::runPendingAction, 5, TimeUnit.SECONDS);
         messagingTemplate.convertAndSend(roomTopic, getGameState());
+
+        // 🤖 ให้บอทพิจารณา NOPE
+        scheduleBotNopeEvaluations();
     }
 
     private void runPendingAction() {
@@ -1390,22 +1412,26 @@ public class GameService {
 
         if (!isGameStarted) {
             players.remove(p);
-            if (disconnectTimers.containsKey(playerName)) {
-                disconnectTimers.get(playerName).cancel(false);
-                disconnectTimers.remove(playerName);
-            }
             validateHost();
             logMsg("🚪 " + playerName + " ออกจากห้อง");
             messagingTemplate.convertAndSend(roomTopic, getGameState());
             return;
         }
 
-        p.setOnline(false);
+        // ออกโดยสมัครใจระหว่างเกม → กลายเป็นบอท Ghost ด้วย (ยังเล่นแทนไปก่อน)
+        // แต่ถ้าต้องการออกจริงๆ ก็ให้เป็นบอทจนกว่าจะตายหรือเกมจบ
         if (p.isHost()) {
             p.setHost(false);
             validateHost();
         }
-        logMsg("🚪 " + playerName + " ออกจากเกม");
+
+        if (!p.isExploded() && !p.isSpectator()) {
+            logMsg("🚪 " + playerName + " ออกจากเกม — 🤖 บอทเข้ามาเล่นแทน");
+            convertToGhostBot(p);
+        } else {
+            p.setOnline(false);
+            logMsg("🚪 " + playerName + " ออกจากเกม");
+        }
         messagingTemplate.convertAndSend(roomTopic, getGameState());
     }
 
@@ -1413,8 +1439,198 @@ public class GameService {
         messagingTemplate.convertAndSend(roomTopic, getGameState());
     }
 
+    // ═══════════════════════════════════════════════════════════
+    //  🤖  BOT MANAGEMENT
+    // ═══════════════════════════════════════════════════════════
+
+    private static final String[] BOT_EASY_NAMES   = {"Kitten-ฟ้า", "Kitten-ส้ม", "Kitten-ชมพู", "Kitten-เหลือง", "Kitten-ขาว"};
+    private static final String[] BOT_MEDIUM_NAMES = {"Cat-น้ำเงิน", "Cat-เขียว", "Cat-ม่วง", "Cat-แดง", "Cat-เทา"};
+    private static final String[] BOT_HARD_NAMES   = {"Tiger-Alpha", "Tiger-Beta", "Tiger-Shadow", "Tiger-Rex", "Tiger-Omega"};
+
+    public void addBot(String hostName, String difficulty) {
+        Player host = getPlayerByName(hostName);
+        if (host == null || !host.isHost()) throw new RuntimeException("เฉพาะหัวห้องเท่านั้นที่เพิ่มบอทได้!");
+        if (isGameStarted) throw new RuntimeException("เกมเริ่มแล้ว ไม่สามารถเพิ่มบอทได้");
+
+        if (players.size() >= 10) throw new RuntimeException("ห้องเต็มแล้ว! (สูงสุด 10 คน)");
+
+        String diff = List.of("EASY", "MEDIUM", "HARD").contains(difficulty) ? difficulty : "EASY";
+        String botName = generateBotName(diff);
+
+        Player bot = new Player(String.valueOf(players.size() + 1), botName, "BOT_" + UUID.randomUUID());
+        bot.setBot(true);
+        bot.setBotDifficulty(diff);
+        bot.setOnline(true);
+        bot.setReady(true); // บอทพร้อมเสมอ
+
+        players.add(bot);
+
+        String diffLabel = switch (diff) {
+            case "EASY"   -> "😺 Kitten";
+            case "MEDIUM" -> "🐱 Cat";
+            case "HARD"   -> "🐯 Tiger";
+            default       -> diff;
+        };
+        logMsg("🤖 " + hostName + " เพิ่มบอท " + botName + " [" + diffLabel + "] เข้าห้อง");
+        messagingTemplate.convertAndSend(roomTopic, getGameState());
+    }
+
+    private String generateBotName(String difficulty) {
+        String[] names = switch (difficulty) {
+            case "EASY"   -> BOT_EASY_NAMES;
+            case "MEDIUM" -> BOT_MEDIUM_NAMES;
+            case "HARD"   -> BOT_HARD_NAMES;
+            default       -> BOT_EASY_NAMES;
+        };
+        Set<String> used = players.stream().map(Player::getName).collect(Collectors.toSet());
+        for (String n : names) {
+            if (!used.contains(n)) return n;
+        }
+        return "Bot-" + difficulty.charAt(0) + (players.size() + 1);
+    }
+
+    // ─────────────── Bot turn trigger ───────────────
+
+    /** เรียกหลัง nextTurn() / startGame() — ถ้าคิวปัจจุบันเป็นบอทให้กำหนดเวลาเล่น */
+    private void triggerBotTurnIfNeeded(String expectedPlayerName) {
+        Player p = getPlayerByName(expectedPlayerName);
+        if (p == null || !p.isBot() || !isGameStarted) return;
+
+        int delayMs = 1500 + new Random().nextInt(1000); // 1.5–2.5 วินาที
+        scheduler.schedule(() -> executeBotTurn(expectedPlayerName), delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    /** Bot เล่น card หรือ draw ตาม BotLogic */
+    private void executeBotTurn(String expectedPlayerName) {
+        // ตรวจสอบว่ายังเป็นตาของบอทนี้อยู่ไหม
+        if (!expectedPlayerName.equals(currentPlayerName)) return;
+        if (!isGameStarted) return;
+
+        Player bot = getCurrentPlayer();
+        if (bot == null || !bot.isBot() || bot.isExploded()) return;
+
+        // ถ้ามี interactive action ค้างอยู่ให้รอก่อน (ไม่ใช่ตาเรา)
+        if (pendingActionType != null && pendingActionPlayer != null
+                && !pendingActionPlayer.equals(bot.getName())) return;
+
+        try {
+            BotLogic.BotAction action = BotLogic.decideTurn(bot, players, deck, turnsLeft);
+
+            if (action.type == BotLogic.ActionType.DRAW) {
+                drawCard(bot.getName());
+            } else {
+                playCard(bot.getName(), action.cardIndices, action.targetName, action.requestedCardType);
+            }
+        } catch (Exception e) {
+            log.warn("🤖 Bot turn error [{}]: {}", bot.getName(), e.getMessage());
+            // Fallback: จั่วการ์ด
+            try { drawCard(bot.getName()); } catch (Exception ignored) {}
+        }
+    }
+
+    // ─────────────── Bot interactive action (GIVE_CARD, PLACE_BOMB, ALTER_FUTURE) ───────────────
+
+    private void triggerBotInteractiveAction(String botName, String actionType) {
+        int delayMs = 1200 + new Random().nextInt(800);
+        scheduler.schedule(() -> executeBotInteractiveAction(botName, actionType), delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private void executeBotInteractiveAction(String botName, String actionType) {
+        // ตรวจว่ายังเป็น action นี้อยู่
+        if (!actionType.equals(pendingActionType) || !botName.equals(pendingActionPlayer)) return;
+
+        Player bot = getPlayerByName(botName);
+        if (bot == null || !bot.isBot()) return;
+
+        try {
+            switch (actionType) {
+                case "PLACE_BOMB" -> {
+                    int pos = BotLogic.decidePlaceBomb(bot, deck.size());
+                    placeBomb(bot.getName(), pos);
+                }
+                case "GIVE_CARD" -> {
+                    int cardIdx = BotLogic.decideGiveCard(bot);
+                    giveCard(bot.getName(), cardIdx);
+                }
+                case "ALTER_FUTURE" -> {
+                    List<String> order = BotLogic.decideAlterFuture(bot, new ArrayList<>(tempFutureCards));
+                    confirmAlterFuture(bot.getName(), order);
+                }
+                case "PICK_DISCARD" -> {
+                    // เลือก DEFUSE > NOPE > อะไรก็ได้
+                    int bestIdx = 0;
+                    int bestScore = Integer.MAX_VALUE;
+                    for (int i = 0; i < discardPile.size(); i++) {
+                        CardType ct = discardPile.get(i).getType();
+                        int score = (ct == CardType.DEFUSE) ? 0 : (ct == CardType.NOPE) ? 1 : 999;
+                        if (score < bestScore) { bestScore = score; bestIdx = i; }
+                    }
+                    pickCardFromDiscard(bot.getName(), bestIdx);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("🤖 Bot interactive action error [{}][{}]: {}", botName, actionType, e.getMessage());
+        }
+    }
+
+    // ─────────────── Bot NOPE evaluation ───────────────
+
+    /** หลัง scheduleAction() ให้บอทแต่ละตัวพิจารณา NOPE ในช่วงหน้าต่าง 5 วิ */
+    private void scheduleBotNopeEvaluations() {
+        if (pendingActionSourcePlayer == null) return;
+        Random rng = new Random();
+
+        for (Player bot : new ArrayList<>(players)) {
+            if (!bot.isBot()) continue;
+            if (bot.isExploded() || bot.isSpectator()) continue;
+            if (bot.getName().equals(pendingActionSourcePlayer.getName())) continue; // ไม่ NOPE ตัวเอง
+
+            boolean hasNope = bot.getHand().stream().anyMatch(c -> c.getType() == CardType.NOPE);
+            if (!hasNope) continue;
+
+            // เลือกเวลาสุ่ม 1–3.5 วิ (ก่อนหมดช่วง 5 วิ)
+            int delayMs = 1000 + rng.nextInt(2500);
+
+            // จำ context ตอนนี้ (อาจเปลี่ยนก่อนบอทตัดสินใจ)
+            Player srcSnapshot   = pendingActionSourcePlayer;
+            CardType typeSnapshot = pendingActionCardType;
+            String targetSnapshot = pendingActionTargetName;
+
+            scheduler.schedule(() -> {
+                // ถ้าช่วงหน้าต่างปิดแล้วหรือสถานะเปลี่ยนไปแล้ว ให้ข้ามไป
+                if (pendingTask == null || pendingTask.isDone()) return;
+                if (srcSnapshot != pendingActionSourcePlayer) return;
+
+                boolean shouldNope = BotLogic.decideNope(
+                        bot, srcSnapshot, typeSnapshot, targetSnapshot, players, isActionNoped);
+
+                if (shouldNope) {
+                    // หา index การ์ด NOPE ของบอท
+                    List<Card> hand = bot.getHand();
+                    for (int i = 0; i < hand.size(); i++) {
+                        if (hand.get(i).getType() == CardType.NOPE) {
+                            try {
+                                logMsg("🤖 " + bot.getName() + " ใช้ NOPE!");
+                                playCard(bot.getName(), List.of(i), null, null);
+                            } catch (Exception e) {
+                                log.warn("🤖 Bot NOPE error [{}]: {}", bot.getName(), e.getMessage());
+                            }
+                            break;
+                        }
+                    }
+                }
+            }, delayMs, TimeUnit.MILLISECONDS);
+        }
+    }
+
     public boolean isEmpty() {
-        return players.stream().noneMatch(Player::isOnline);
+        // ห้องว่างเมื่อ:
+        // 1. ไม่มีมนุษย์จริงที่ online อยู่ (บอทที่ host เพิ่มไม่นับ)
+        // 2. ไม่มี Ghost Bot เหลืออยู่ (Ghost Bot = isBot แต่ token ไม่ขึ้นต้นด้วย BOT_)
+        //    Ghost Bot หมายความว่ายังมีมนุษย์ที่อาจกลับมา reconnect ได้
+        boolean hasOnlineHuman    = players.stream().filter(p -> !p.isBot()).anyMatch(Player::isOnline);
+        boolean hasGhostBot       = players.stream().anyMatch(p -> p.isBot() && !p.getToken().startsWith("BOT_"));
+        return !hasOnlineHuman && !hasGhostBot;
     }
 
     public com.game.meowbooms.model.Room getRoomInfo(String roomId) {

@@ -18,6 +18,9 @@ public class Player {
 
     private boolean isReady;
 
+    private boolean isBot;           // 🤖 บอทหรือไม่
+    private String botDifficulty;    // "EASY" | "MEDIUM" | "HARD"
+
     public Player(String id, String name, String token) {
         this.id = id;
         this.name = name;
@@ -27,5 +30,7 @@ public class Player {
         this.isHost = false;
         this.isSpectator = false;
         this.isReady = false;
+        this.isBot = false;
+        this.botDifficulty = null;
     }
 }
