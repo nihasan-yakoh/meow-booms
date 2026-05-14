@@ -945,6 +945,9 @@ public class GameService {
                 turnsLeft = attacksToPass;
 
                 logMsg("😱 " + targetPlayerName + " โดนล็อคเป้า! ต้องเล่น " + turnsLeft + " รอบ!");
+
+                // 🤖 ATTACK_TO ข้าม nextTurn() เลยต้องเรียก trigger เองตรงนี้
+                triggerBotTurnIfNeeded(currentPlayerName);
                 break;
             case UNDER:
                 logMsg("⬇️ " + playerName + " เลือกจั่วจากใต้กองการ์ด...");

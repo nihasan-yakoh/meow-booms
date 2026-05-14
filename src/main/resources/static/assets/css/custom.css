@@ -609,7 +609,7 @@ body {
     gap: 8px;
     flex-shrink: 0;
     min-height: 56px;
-    z-index: 20;
+    z-index: 60; /* > #mobileLogToggle (51) เพื่อให้ dropdown ทับได้ถูก */
 }
 
 /* --- Player Chips Area --- */
