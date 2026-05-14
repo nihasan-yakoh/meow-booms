@@ -1556,7 +1556,7 @@ public class GameService {
             if (action.type == BotLogic.ActionType.DRAW) {
                 drawCard(bot.getName());
             } else {
-                playCard(bot.getName(), action.cardIndices, action.targetName, action.requestedCardType);
+                playCard(bot.getName(), new ArrayList<>(action.cardIndices), action.targetName, action.requestedCardType);
             }
         } catch (Exception e) {
             log.warn("🤖 Bot turn error [{}]: {}", bot.getName(), e.getMessage());
@@ -1660,7 +1660,7 @@ public class GameService {
                             if (hand.get(i).getType() == CardType.NOPE) {
                                 try {
                                     logMsg("🤖 " + bot.getName() + " ใช้ NOPE!");
-                                    playCard(bot.getName(), List.of(i), null, null);
+                                    playCard(bot.getName(), new ArrayList<>(List.of(i)), null, null);
                                 } catch (Exception e) {
                                     log.warn("🤖 Bot NOPE error [{}]: {}", bot.getName(), e.getMessage());
                                 }
