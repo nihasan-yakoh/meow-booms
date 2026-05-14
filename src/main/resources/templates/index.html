@@ -627,6 +627,10 @@
                     this.modal._config.backdrop = 'static';
                     this.modal._config.keyboard = false;
 
+                    // 🔥 ล้าง footer เสมอ — ป้องกัน "รับทราบ!" ค้างจากฟังก์ชันก่อนหน้า
+                    const footer = document.querySelector('#selectionModal .modal-footer');
+                    footer.innerHTML = '';
+
                     document.getElementById('modalTitle').innerText = title;
                     const body = document.getElementById('modalBody');
 

@@ -1278,6 +1278,7 @@ public class GameService {
 
         pendingTask = scheduler.schedule(this::runPendingAction, 5, TimeUnit.SECONDS);
         messagingTemplate.convertAndSend(roomTopic, getGameState());
+        scheduleBotNopeEvaluations(); // 🤖 ให้บอทพิจารณา counter-NOPE
     }
 
     private void setupPickDiscard(String playerName) {
