@@ -68,11 +68,26 @@ public class BotLogic {
 
     // ───────────────────────── Easy (Kitten) ─────────────────────────
 
-    /** 70% draw, 30% random playable non-MEOW card. */
+    /**
+     * Plays like a beginner: mostly draws, occasionally panics, rarely does anything smart.
+     * Fun because: unpredictable, chaotic, occasionally surprises you.
+     */
     private static BotAction decideEasy(Player bot, List<Player> players, int turnsLeft) {
+        List<Card> hand = bot.getHand();
+
+        // Under attack: beginner might panic and SKIP (35%), otherwise just takes the hits
+        if (turnsLeft > 1) {
+            if (RNG.nextInt(100) < 35) {
+                int idx = find(hand, CardType.SKIP);
+                if (idx >= 0) return BotAction.play(List.of(idx));
+            }
+            return BotAction.draw(); // confused, stumbles into extra draws
+        }
+
+        // 70% just draw (naive/adventurous — "how bad could it be?")
         if (RNG.nextInt(100) < 70) return BotAction.draw();
 
-        List<Card> hand = bot.getHand();
+        // 30%: play a random card chaotically (might help, might not)
         List<Integer> playable = singlePlayableIndices(hand);
         if (playable.isEmpty()) return BotAction.draw();
 
@@ -89,7 +104,11 @@ public class BotLogic {
 
     // ───────────────────────── Medium (Cat) ─────────────────────────
 
-    /** Strategic play without seeing the deck. Responds to risk and attack pressure. */
+    /**
+     * Plays like a casual player who's done a few games:
+     * aware of danger, uses attacks strategically, but misses some plays.
+     * Fun because: gives a real challenge with exploitable gaps.
+     */
     private static BotAction decideMedium(Player bot, List<Player> players, Stack<Card> deck, int turnsLeft) {
         List<Card> hand = bot.getHand();
         int deckSize = deck.size();
@@ -98,10 +117,11 @@ public class BotLogic {
         if (turnsLeft > 1) {
             BotAction escape = tryEscape(hand, bot, players);
             if (escape != null) return escape;
+            // No escape cards → draw bravely
         }
 
-        // Small deck → dangerous; try to peek/shuffle/skip/attack
-        if (deckSize <= 6) {
+        // Small deck → nervous; try to peek/fix/shuffle/skip/attack
+        if (deckSize <= 8) {
             int idx;
             if ((idx = find(hand, CardType.SEE_THE_FUTURE)) >= 0)    return BotAction.play(List.of(idx));
             if ((idx = find(hand, CardType.CHANGE_THE_FUTURE)) >= 0)  return BotAction.play(List.of(idx));
@@ -115,20 +135,28 @@ public class BotLogic {
             if ((idx = find(hand, CardType.ATTACK)) >= 0)             return BotAction.play(List.of(idx));
         }
 
-        // Proactive plays — check each independently so multiple can fire
-        // SEE_THE_FUTURE: 35% (always useful intel)
+        // Proactive plays (each checked independently)
+        // STF 35%: "let me see what's coming..."
         if (RNG.nextInt(100) < 35) {
             int idx = find(hand, CardType.SEE_THE_FUTURE);
             if (idx >= 0) return BotAction.play(List.of(idx));
         }
-        // ATTACK: 40% — try ATTACK_TO (targeted) first, then regular ATTACK
-        if (RNG.nextInt(100) < 40) {
+        // ATTACK 45%: try ATTACK_TO first (random target), then regular ATTACK
+        if (RNG.nextInt(100) < 45) {
             int idx = find(hand, CardType.ATTACK_TO);
             if (idx >= 0) {
                 String target = pickRandomTarget(bot, players);
                 if (target != null) return BotAction.play(List.of(idx), target);
             }
             if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
+        }
+        // FAVOR 20%: occasionally steal — medium player knows this is useful
+        if (RNG.nextInt(100) < 20) {
+            int idx = find(hand, CardType.FAVOR);
+            if (idx >= 0) {
+                String target = pickRandomTarget(bot, players);
+                if (target != null) return BotAction.play(List.of(idx), target);
+            }
         }
 
         return BotAction.draw();
@@ -307,9 +335,9 @@ public class BotLogic {
                     yield RNG.nextInt(100) < 10; // rarely counter-NOPE others' NOPEs
                 }
 
-                // ATTACK_TO aimed at us — always fight it
+                // ATTACK_TO aimed at us — almost always fight it
                 if (isTargeted && actionType == CardType.ATTACK_TO)
-                    yield RNG.nextInt(100) < 92;
+                    yield RNG.nextInt(100) < 85;
 
                 // FAVOR targeting us — protect DEFUSE at all costs, less so otherwise
                 if (isTargeted && actionType == CardType.FAVOR) {
