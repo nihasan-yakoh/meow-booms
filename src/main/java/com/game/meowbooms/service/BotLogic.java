@@ -100,24 +100,35 @@ public class BotLogic {
             if (escape != null) return escape;
         }
 
-        // Small deck → dangerous; try to peek/shuffle/skip
+        // Small deck → dangerous; try to peek/shuffle/skip/attack
         if (deckSize <= 6) {
             int idx;
             if ((idx = find(hand, CardType.SEE_THE_FUTURE)) >= 0)    return BotAction.play(List.of(idx));
+            if ((idx = find(hand, CardType.CHANGE_THE_FUTURE)) >= 0)  return BotAction.play(List.of(idx));
             if ((idx = find(hand, CardType.SHUFFLE)) >= 0)            return BotAction.play(List.of(idx));
             if ((idx = find(hand, CardType.SKIP)) >= 0)               return BotAction.play(List.of(idx));
-            // Attack someone to pass the hot potato
+            idx = find(hand, CardType.ATTACK_TO);
+            if (idx >= 0) {
+                String target = pickRandomTarget(bot, players);
+                if (target != null) return BotAction.play(List.of(idx), target);
+            }
             if ((idx = find(hand, CardType.ATTACK)) >= 0)             return BotAction.play(List.of(idx));
         }
 
-        // Occasionally be proactive (30% ATTACK, 20% SEE_THE_FUTURE)
-        if (RNG.nextInt(100) < 30) {
-            int idx = find(hand, CardType.ATTACK);
-            if (idx >= 0) return BotAction.play(List.of(idx));
-        }
-        if (RNG.nextInt(100) < 20) {
+        // Proactive plays — check each independently so multiple can fire
+        // SEE_THE_FUTURE: 35% (always useful intel)
+        if (RNG.nextInt(100) < 35) {
             int idx = find(hand, CardType.SEE_THE_FUTURE);
             if (idx >= 0) return BotAction.play(List.of(idx));
+        }
+        // ATTACK: 40% — try ATTACK_TO (targeted) first, then regular ATTACK
+        if (RNG.nextInt(100) < 40) {
+            int idx = find(hand, CardType.ATTACK_TO);
+            if (idx >= 0) {
+                String target = pickRandomTarget(bot, players);
+                if (target != null) return BotAction.play(List.of(idx), target);
+            }
+            if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
         }
 
         return BotAction.draw();
@@ -138,24 +149,19 @@ public class BotLogic {
             if (escape != null) return escape;
         }
 
-        // Check bomb proximity
+        // Check bomb proximity (hard bot sees the full deck)
         boolean bombInTop3 = bombNearTop(deck, 3);
         boolean bombInTop6 = bombNearTop(deck, 6);
 
         if (bombInTop3) {
-            // CHANGE_THE_FUTURE: bury the bomb before it reaches us
+            // Priority: CTF → SHUFFLE → SKIP → ATTACK_TO/ATTACK (85%) → brave draw (15%)
             int idx = find(hand, CardType.CHANGE_THE_FUTURE);
             if (idx >= 0) return BotAction.play(List.of(idx));
 
-            // SHUFFLE: randomise the danger away
             if ((idx = find(hand, CardType.SHUFFLE)) >= 0) return BotAction.play(List.of(idx));
+            if ((idx = find(hand, CardType.SKIP)) >= 0)    return BotAction.play(List.of(idx));
 
-            // SKIP: skip our own draw
-            if ((idx = find(hand, CardType.SKIP)) >= 0) return BotAction.play(List.of(idx));
-
-            // Overconfidence flaw (15%): sometimes the hard bot ignores the bomb and draws anyway
-            if (RNG.nextInt(100) < 85) {
-                // Pass the bomb to the weakest opponent
+            if (RNG.nextInt(100) < 85) {   // 15 % overconfidence flaw
                 idx = find(hand, CardType.ATTACK_TO);
                 if (idx >= 0) {
                     String target = pickWeakestTarget(bot, players);
@@ -165,18 +171,43 @@ public class BotLogic {
             }
         }
 
-        if (bombInTop6 && RNG.nextInt(100) < 55) {
+        if (bombInTop6) {
+            // Scout and dodge
             int idx;
-            if ((idx = find(hand, CardType.SEE_THE_FUTURE)) >= 0)         return BotAction.play(List.of(idx));
-            if ((idx = find(hand, CardType.CHANGE_THE_FUTURE)) >= 0)       return BotAction.play(List.of(idx));
-            if ((idx = find(hand, CardType.ATTACK)) >= 0)                  return BotAction.play(List.of(idx));
+            if ((idx = find(hand, CardType.SEE_THE_FUTURE)) >= 0)    return BotAction.play(List.of(idx));
+            if ((idx = find(hand, CardType.CHANGE_THE_FUTURE)) >= 0)  return BotAction.play(List.of(idx));
+            // Pass the danger (70%)
+            if (RNG.nextInt(100) < 70) {
+                idx = find(hand, CardType.ATTACK_TO);
+                if (idx >= 0) {
+                    String target = pickWeakestTarget(bot, players);
+                    if (target != null) return BotAction.play(List.of(idx), target);
+                }
+                if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
+                if ((idx = find(hand, CardType.SKIP)) >= 0)   return BotAction.play(List.of(idx));
+            }
         }
 
-        // Proactively attack the weakest player 40 % of the time
-        if (RNG.nextInt(100) < 40) {
+        // ── Safe zone: hard bot plays proactively ──
+        // SEE_THE_FUTURE: 65% — intel is always valuable
+        if (RNG.nextInt(100) < 65) {
+            int idx = find(hand, CardType.SEE_THE_FUTURE);
+            if (idx >= 0) return BotAction.play(List.of(idx));
+        }
+        // ATTACK: 60% — ATTACK_TO targets weakest, fallback to regular ATTACK
+        if (RNG.nextInt(100) < 60) {
             int idx = find(hand, CardType.ATTACK_TO);
             if (idx >= 0) {
                 String target = pickWeakestTarget(bot, players);
+                if (target != null) return BotAction.play(List.of(idx), target);
+            }
+            if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
+        }
+        // FAVOR: 40% — steal from the player with the most cards
+        if (RNG.nextInt(100) < 40) {
+            int idx = find(hand, CardType.FAVOR);
+            if (idx >= 0) {
+                String target = pickRichestTarget(bot, players);
                 if (target != null) return BotAction.play(List.of(idx), target);
             }
         }
@@ -348,6 +379,14 @@ public class BotLogic {
     private static String pickWeakestTarget(Player bot, List<Player> players) {
         return alivePlayers(players, bot.getName()).stream()
                 .min(Comparator.comparingInt(p -> p.getHand().size()))
+                .map(Player::getName)
+                .orElse(null);
+    }
+
+    /** Pick the player with the most cards (best FAVOR target). */
+    private static String pickRichestTarget(Player bot, List<Player> players) {
+        return alivePlayers(players, bot.getName()).stream()
+                .max(Comparator.comparingInt(p -> p.getHand().size()))
                 .map(Player::getName)
                 .orElse(null);
     }
