@@ -1278,7 +1278,7 @@ public class GameService {
 
         pendingTask = scheduler.schedule(this::runPendingAction, 5, TimeUnit.SECONDS);
         messagingTemplate.convertAndSend(roomTopic, getGameState());
-        scheduleBotNopeEvaluations(); // 🤖 ให้บอทพิจารณา counter-NOPE
+        scheduleBotNopeEvaluations(player.getName()); // 🤖 counter-NOPE — ยกเว้นคนที่เพิ่ง NOPE ไป
     }
 
     private void setupPickDiscard(String playerName) {
@@ -1625,14 +1625,18 @@ public class GameService {
     // ─────────────── Bot NOPE evaluation ───────────────
 
     /** หลัง scheduleAction() ให้บอทแต่ละตัวพิจารณา NOPE ในช่วงหน้าต่าง 5 วิ */
-    private void scheduleBotNopeEvaluations() {
+    private void scheduleBotNopeEvaluations() { scheduleBotNopeEvaluations(null); }
+
+    /** overload: alsoExclude = ชื่อบอทที่เพิ่ง NOPE ไป (ป้องกัน NOPE ตัวเอง) */
+    private void scheduleBotNopeEvaluations(String alsoExclude) {
         if (pendingActionSourcePlayer == null) return;
         Random rng = new Random();
 
         for (Player bot : new ArrayList<>(players)) {
             if (!bot.isBot()) continue;
             if (bot.isExploded() || bot.isSpectator()) continue;
-            if (bot.getName().equals(pendingActionSourcePlayer.getName())) continue; // ไม่ NOPE ตัวเอง
+            if (bot.getName().equals(pendingActionSourcePlayer.getName())) continue; // ไม่ NOPE action ตัวเอง
+            if (alsoExclude != null && bot.getName().equals(alsoExclude)) continue;  // ไม่ NOPE การ์ด NOPE ที่ตัวเองเพิ่งใช้ไป
 
             boolean hasNope = bot.getHand().stream().anyMatch(c -> c.getType() == CardType.NOPE);
             if (!hasNope) continue;
