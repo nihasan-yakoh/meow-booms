@@ -239,47 +239,55 @@ public class BotLogic {
             return BotAction.draw();
         }
 
-        // ── MODERATE DANGER: bomb in positions 3–5 from top ──
-        // Key decision driver: do I have a DEFUSE?
+        // ── MODERATE DANGER: bomb at positions 3–5 ──
+        // ⚠️  ATTACK here = gift opponent 2 safe draws + bigger hand → BAD TRADE.
+        //     Use SKIP (costs 1 card, no gift) or just draw instead.
         if (bombTop6) {
             int idx;
             if (!hasDefuse) {
-                // No safety net — be proactive but measured (NOT frantic)
-                if (RNG.nextInt(100) < 40 && (idx = find(hand, CardType.SEE_THE_FUTURE)) >= 0)
-                    return BotAction.play(List.of(idx));                     // scout 40%
-                if (RNG.nextInt(100) < 55) {                                 // attack 55%
-                    idx = find(hand, CardType.ATTACK_TO);
-                    if (idx >= 0) {
-                        String target = pickThreat(bot, players);
-                        if (target != null) return BotAction.play(List.of(idx), target);
-                    }
-                    if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
-                }
-                if (RNG.nextInt(100) < 35 && (idx = find(hand, CardType.SKIP)) >= 0)
-                    return BotAction.play(List.of(idx));                     // skip 35%
+                // Scout exact position before committing (45%)
+                if (RNG.nextInt(100) < 45 && (idx = find(hand, CardType.SEE_THE_FUTURE)) >= 0)
+                    return BotAction.play(List.of(idx));
+                // SKIP: skip our draw cheaply — no cards gifted to anyone (40%)
+                if (RNG.nextInt(100) < 40 && (idx = find(hand, CardType.SKIP)) >= 0)
+                    return BotAction.play(List.of(idx));
+                // CTF if bomb is right at position 3 (borderline critical)
+                if (bombPos == 3 && (idx = find(hand, CardType.CHANGE_THE_FUTURE)) >= 0)
+                    return BotAction.play(List.of(idx));
+                // No ATTACK — draw and hope for the best
             } else {
-                // Have DEFUSE → play aggressively, don't waste resources on defense
-                if (RNG.nextInt(100) < 45) {
-                    idx = find(hand, CardType.ATTACK_TO);
-                    if (idx >= 0) {
-                        String target = pickThreat(bot, players);
-                        if (target != null) return BotAction.play(List.of(idx), target);
-                    }
-                    if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
-                }
+                // Have DEFUSE safety net: steal instead of gifting attack cards (30%)
                 if (RNG.nextInt(100) < 30 && (idx = find(hand, CardType.FAVOR)) >= 0) {
                     String target = pickRichestTarget(bot, players);
                     if (target != null) return BotAction.play(List.of(idx), target);
                 }
-                // Fall through — brave enough to draw with DEFUSE in hand
+                // Brave draw — worst case we use the DEFUSE
             }
         }
 
-        // ── SAFE / DEEP BOMB: dominant game-control mode ──
-        // A real player doesn't just peek all day — they apply pressure.
+        // ── SAFE / DEEP BOMB: calculated game-control mode ──
+        //
+        // Core rule: ATTACK is only a winning play when bomb is shallow enough
+        //            that the opponent is LIKELY to draw into it.
+        //            With deep/no bomb, ATTACK hands them 2 free cards → FAVOR wins.
+        //
+        //  • bomb in top third of deck  → ATTACK makes sense (they might hit it)
+        //  • bomb in bottom two-thirds  → FAVOR is strictly better (steal 1 card)
+        //  • no bomb at all             → skip attack, just FAVOR/STF/draw
 
-        // 1. Attack the most dangerous opponent (50%)
-        if (RNG.nextInt(100) < 50) {
+        boolean attackIsValuable = !noBomb && (bombPos * 3 < deckSize); // bomb in top 1/3
+
+        // 1. FAVOR — direct card advantage, always worth it (40%)
+        if (RNG.nextInt(100) < 40) {
+            int idx = find(hand, CardType.FAVOR);
+            if (idx >= 0) {
+                String target = pickRichestTarget(bot, players);
+                if (target != null) return BotAction.play(List.of(idx), target);
+            }
+        }
+
+        // 2. ATTACK — only when bomb is shallow enough to threaten the target (45%)
+        if (attackIsValuable && RNG.nextInt(100) < 45) {
             int idx = find(hand, CardType.ATTACK_TO);
             if (idx >= 0) {
                 String target = pickThreat(bot, players);
@@ -288,16 +296,7 @@ public class BotLogic {
             if ((idx = find(hand, CardType.ATTACK)) >= 0) return BotAction.play(List.of(idx));
         }
 
-        // 2. Resource denial: FAVOR from the richest (35%)
-        if (RNG.nextInt(100) < 35) {
-            int idx = find(hand, CardType.FAVOR);
-            if (idx >= 0) {
-                String target = pickRichestTarget(bot, players);
-                if (target != null) return BotAction.play(List.of(idx), target);
-            }
-        }
-
-        // 3. Intel: SEE_THE_FUTURE (25%) — only when it actually changes the plan
+        // 3. Intel: STF (25%) — strategic peek, not compulsive
         if (RNG.nextInt(100) < 25) {
             int idx = find(hand, CardType.SEE_THE_FUTURE);
             if (idx >= 0) return BotAction.play(List.of(idx));
