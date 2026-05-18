@@ -87,6 +87,12 @@ public class BotLogic {
         // 70% just draw (naive/adventurous — "how bad could it be?")
         if (RNG.nextInt(100) < 70) return BotAction.draw();
 
+        // 10%: accidentally stumble into a 2-card combo
+        if (RNG.nextInt(100) < 10) {
+            BotAction combo = tryCombo2(bot, players);
+            if (combo != null) return combo;
+        }
+
         // 30%: play a random card chaotically (might help, might not)
         List<Integer> playable = singlePlayableIndices(hand);
         if (playable.isEmpty()) return BotAction.draw();
@@ -157,6 +163,16 @@ public class BotLogic {
                 String target = pickRandomTarget(bot, players);
                 if (target != null) return BotAction.play(List.of(idx), target);
             }
+        }
+        // Combo 2 (30%): knows matching pairs are useful
+        if (RNG.nextInt(100) < 30) {
+            BotAction combo = tryCombo2(bot, players);
+            if (combo != null) return combo;
+        }
+        // Combo 3 (15%): occasionally remembers you can request a specific card
+        if (RNG.nextInt(100) < 15) {
+            BotAction combo = tryCombo3(bot, players, CardType.SKIP.name());
+            if (combo != null) return combo;
         }
 
         return BotAction.draw();
@@ -243,6 +259,13 @@ public class BotLogic {
                 String target = pickRichestTarget(bot, players);
                 if (target != null) return BotAction.play(List.of(idx), target);
             }
+            // Good time to play offense — this draw is safe (35%)
+            if (RNG.nextInt(100) < 35) {
+                BotAction c = tryCombo3(bot, players, CardType.DEFUSE.name());
+                if (c != null) return c;
+                c = tryCombo2(bot, players);
+                if (c != null) return c;
+            }
             return BotAction.draw(); // safe; bomb hits pos 0 next turn — handle then
         }
 
@@ -260,6 +283,13 @@ public class BotLogic {
                 String target = pickRichestTarget(bot, players);
                 if (target != null) return BotAction.play(List.of(idx), target);
             }
+            // Offensive play during safe window (30%)
+            if (RNG.nextInt(100) < 30) {
+                BotAction c = tryCombo3(bot, players, CardType.DEFUSE.name());
+                if (c != null) return c;
+                c = tryCombo2(bot, players);
+                if (c != null) return c;
+            }
             // No SKIP, no ATTACK — safe draws are free, don't waste resources
             return BotAction.draw();
         }
@@ -269,7 +299,13 @@ public class BotLogic {
         // will actually reach it.  Otherwise ATTACK gifts 2 free cards → bad trade.
         boolean attackThreatens = !noBomb && (bombPos * 3 < deckSize); // top 1/3
 
-        // 1. FAVOR — steal from richest, direct card advantage (40%)
+        // 1. Combo 3 — steal DEFUSE from richest (60%): game-changing if it hits
+        if (RNG.nextInt(100) < 60) {
+            BotAction c = tryCombo3(bot, players, CardType.DEFUSE.name());
+            if (c != null) return c;
+        }
+
+        // 2. FAVOR — steal from richest, direct card advantage (40%)
         if (RNG.nextInt(100) < 40) {
             int idx = find(hand, CardType.FAVOR);
             if (idx >= 0) {
@@ -278,7 +314,19 @@ public class BotLogic {
             }
         }
 
-        // 2. ATTACK — only when it pushes bomb threat onto opponent (45%)
+        // 3. Combo 2 — steal random card from richest (50%)
+        if (RNG.nextInt(100) < 50) {
+            BotAction c = tryCombo2(bot, players);
+            if (c != null) return c;
+        }
+
+        // 4. Combo 5 — pick best card from discard pile (35%)
+        if (RNG.nextInt(100) < 35) {
+            BotAction c = tryCombo5(hand);
+            if (c != null) return c;
+        }
+
+        // 5. ATTACK — only when it pushes bomb threat onto opponent (45%)
         if (attackThreatens && RNG.nextInt(100) < 45) {
             int idx = find(hand, CardType.ATTACK_TO);
             if (idx >= 0) {
@@ -492,6 +540,75 @@ public class BotLogic {
 
     private static boolean bombNearTop(Stack<Card> deck, int depth) {
         return nearestBombFromTop(deck) >= 0 && nearestBombFromTop(deck) < depth;
+    }
+
+    // ── Combo helpers ──
+
+    /**
+     * 2 matching MEOW cards → steal a random card from richest target.
+     */
+    private static BotAction tryCombo2(Player bot, List<Player> players) {
+        Map<CardType, List<Integer>> groups = groupMeows(bot.getHand());
+        for (List<Integer> idx : groups.values()) {
+            if (idx.size() >= 2) {
+                String target = pickRichestTarget(bot, players);
+                if (target != null)
+                    return BotAction.play(new ArrayList<>(idx.subList(0, 2)), target);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 3 matching MEOW cards → steal a specific card type from richest target.
+     * @param requestedType CardType name to request (e.g. "DEFUSE", "SKIP")
+     */
+    private static BotAction tryCombo3(Player bot, List<Player> players, String requestedType) {
+        Map<CardType, List<Integer>> groups = groupMeows(bot.getHand());
+        for (List<Integer> idx : groups.values()) {
+            if (idx.size() >= 3) {
+                String target = pickRichestTarget(bot, players);
+                if (target != null)
+                    return BotAction.play(new ArrayList<>(idx.subList(0, 3)), target, requestedType);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 5 different card types → pick a card from discard pile.
+     * Prefers non-MEOW cards to preserve pairs for combo2/3.
+     */
+    private static BotAction tryCombo5(List<Card> hand) {
+        if (hand.size() < 5) return null;
+        Set<CardType> seen = new HashSet<>();
+        List<Integer> indices = new ArrayList<>();
+        // First pass: non-MEOW cards (save MEOWs for pair combos)
+        for (int i = 0; i < hand.size(); i++) {
+            CardType t = hand.get(i).getType();
+            if (t == CardType.DEFUSE || t == CardType.BOOMS || t == CardType.NOPE) continue;
+            if (t.name().startsWith("MEOW")) continue;
+            if (seen.add(t)) { indices.add(i); if (indices.size() == 5) return BotAction.play(indices); }
+        }
+        // Second pass: include MEOWs if still need more different types
+        for (int i = 0; i < hand.size(); i++) {
+            CardType t = hand.get(i).getType();
+            if (t == CardType.DEFUSE || t == CardType.BOOMS || t == CardType.NOPE) continue;
+            if (indices.contains(i)) continue;
+            if (seen.add(t)) { indices.add(i); if (indices.size() == 5) return BotAction.play(indices); }
+        }
+        return null;
+    }
+
+    /** Group MEOW cards by type → Map<type, list of hand indices> */
+    private static Map<CardType, List<Integer>> groupMeows(List<Card> hand) {
+        Map<CardType, List<Integer>> groups = new LinkedHashMap<>();
+        for (int i = 0; i < hand.size(); i++) {
+            CardType t = hand.get(i).getType();
+            if (t.name().startsWith("MEOW"))
+                groups.computeIfAbsent(t, k -> new ArrayList<>()).add(i);
+        }
+        return groups;
     }
 
     // ── Targeting helpers ──
